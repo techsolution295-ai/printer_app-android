@@ -1,12 +1,17 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:smart_printer/config/pro_theme.dart';
+import '../l10n/labels.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:path_provider/path_provider.dart';
+import '../ads/ad_service.dart';
 import '../database/data-base.dart';
 import '../models/print_history_model.dart';
 import 'text_pre.dart';
+import '../widgets/app_loader.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/pro_crown_icon.dart';
 
 class ContactsScreen extends StatefulWidget {
   const ContactsScreen({super.key});
@@ -21,6 +26,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
   List<Contact> _contacts = [];
   List<Contact> _filtered = [];
   bool _loading = true;
+  bool _saving = false;
   bool _permissionDenied = false;
 
   @override
@@ -62,7 +68,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
     } catch (error) {
       debugPrint('Contacts load failed: $error');
       if (mounted) {
-        AppSnack.show(context, 'Could not load contacts: $error');
+        AppSnack.show(context, t(context, 'could_not_load_contacts', namedArgs: {'error': '$error'}));
       }
     } finally {
       if (mounted) {
@@ -123,7 +129,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
     }
     final text = buffer.toString().trim();
     if (text.isEmpty) {
-      AppSnack.show(context, 'Select contacts with phone numbers.');
+      AppSnack.show(context, t(context, 'select_contacts_phone'));
       return;
     }
     Navigator.push(
@@ -145,9 +151,11 @@ class _ContactsScreenState extends State<ContactsScreen> {
     }
     final text = buffer.toString().trim();
     if (text.isEmpty) {
-      AppSnack.show(context, 'Select contacts with phone numbers.');
+      AppSnack.show(context, t(context, 'select_contacts_phone'));
       return;
     }
+    if (_saving) return;
+    setState(() => _saving = true);
     try {
       final Directory dir;
       if (Platform.isAndroid) {
@@ -170,17 +178,22 @@ class _ContactsScreenState extends State<ContactsScreen> {
         ),
       );
       if (!mounted) return;
-      AppSnack.show(context, 'Saved to Files');
+      AppSnack.show(context, t(context, 'saved_to_files'));
     } catch (error) {
       debugPrint('Contacts save failed: $error');
       if (!mounted) return;
-      AppSnack.show(context, 'Could not save contacts: $error');
+      AppSnack.show(context, t(context, 'could_not_save_contacts'));
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppBusyOverlay(
+      busy: _loading || _saving,
+      message: _loading ? t(context, 'loading_contacts') : t(context, 'saving'),
+      child: Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         elevation: 0,
@@ -195,8 +208,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
           ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'Contacts',
+        title: Text(
+          t(context, 'feat_contacts'),
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -204,6 +217,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
           ),
         ),
         actions: [
+          const ProAppBarButton(),
           IconButton(
             onPressed: _loadContacts,
             icon: const Icon(Icons.refresh),
@@ -227,7 +241,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                   child: TextField(
                     controller: _searchController,
                     decoration: InputDecoration(
-                      hintText: 'Search contacts',
+                      hintText: t(context, 'search_contacts'),
                       prefixIcon: const Icon(Icons.search),
                       filled: true,
                       fillColor: Colors.white,
@@ -252,8 +266,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text(
-                    'Select All',
+                  child: Text(
+                    t(context, 'select_all'),
                     style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
                   ),
                 ),
@@ -261,15 +275,13 @@ class _ContactsScreenState extends State<ContactsScreen> {
             ),
           ),
           Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _permissionDenied
+            child: _permissionDenied
                     ? Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Text(
-                              'Contacts permission denied',
+                            Text(
+                              t(context, 'contacts_denied'),
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
@@ -280,15 +292,15 @@ class _ContactsScreenState extends State<ContactsScreen> {
                             OutlinedButton.icon(
                               onPressed: _loadContacts,
                               icon: const Icon(Icons.refresh),
-                              label: const Text('Try Again'),
+                              label: Text(t(context, 'try_again')),
                             ),
                           ],
                         ),
                       )
                     : _filtered.isEmpty
-                        ? const Center(
+                        ? Center(
                             child: Text(
-                              'No contacts found',
+                              t(context, 'no_contacts'),
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
@@ -316,11 +328,20 @@ class _ContactsScreenState extends State<ContactsScreen> {
                       ),
           ),
           _BottomActions(
-            onSave: _saveSelected,
-            onPrint: _printSelected,
+            onSave: _loading || _saving
+                ? () {}
+                : afterInterstitial(_saveSelected),
+            onPrint: _loading || _saving
+                ? () {}
+                : () {
+                    AdService.instance.showInterstitialThen(() async {
+                      _printSelected();
+                    });
+                  },
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -357,14 +378,17 @@ class _HeaderCard extends StatelessWidget {
             ),
             child: const Icon(
               Icons.contacts_rounded,
-              color: Color(0xFF2F80ED),
+              color: AppTheme.actionColor,
               size: 18,
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Contacts ($count) • Selected $selected',
+              t(context, 'contacts_summary', namedArgs: {
+                'count': '$count',
+                'selected': '$selected',
+              }),
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
@@ -423,7 +447,7 @@ class _ContactTile extends StatelessWidget {
               ),
               child: const Icon(
                 Icons.person_rounded,
-                color: Color(0xFF2F80ED),
+                color: AppTheme.actionColor,
                 size: 18,
               ),
             ),
@@ -446,7 +470,7 @@ class _ContactTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    phone.isEmpty ? 'No number' : phone,
+                    phone.isEmpty ? t(context, 'no_number') : phone,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -461,7 +485,7 @@ class _ContactTile extends StatelessWidget {
             Checkbox(
               value: selected,
               onChanged: enabled ? (_) => onTap?.call() : null,
-              activeColor: const Color(0xFF2F80ED),
+              activeColor: AppTheme.actionColor,
             ),
           ],
         ),
@@ -498,8 +522,8 @@ class _BottomActions extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: onSave,
                 icon: const Icon(Icons.save_rounded, size: 20),
-                label: const Text(
-                  'Save',
+                label: Text(
+                  t(context, 'save'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -517,12 +541,12 @@ class _BottomActions extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: onPrint,
                 icon: const Icon(Icons.print_rounded, size: 20),
-                label: const Text(
-                  'Print Selected',
+                label: Text(
+                  t(context, 'print_selected'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2F80ED),
+                  backgroundColor: AppTheme.actionColor,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(vertical: 14),

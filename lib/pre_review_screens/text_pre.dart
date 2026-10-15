@@ -2,14 +2,18 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:smart_printer/config/pro_theme.dart';
+import '../l10n/labels.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
+import '../ads/ad_service.dart';
 import '../database/data-base.dart';
 import '../models/print_history_model.dart';
+import '../widgets/app_loader.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/pro_crown_icon.dart';
 
 class TextPreScreen extends StatefulWidget {
   const TextPreScreen({super.key, this.initialText});
@@ -87,7 +91,7 @@ class _TextPreScreenState extends State<TextPreScreen> {
   Future<void> _saveNow() async {
     final text = _controller.text.trim();
     if (text.isEmpty) {
-      _show('Please enter some text.');
+      _show(t(context, 'enter_text'));
       return;
     }
     if (_busy) return;
@@ -95,11 +99,11 @@ class _TextPreScreenState extends State<TextPreScreen> {
     try {
       await _saveTextPdf(text);
       if (!mounted) return;
-      _show('Saved to Files');
+      _show(t(context, 'saved_to_files'));
     } catch (error) {
       debugPrint('Smart Text save failed: $error');
       if (mounted) {
-        _show('Could not save text: $error');
+        _show(t(context, 'could_not_save_text', namedArgs: {'error': '$error'}));
       }
     } finally {
       if (mounted) {
@@ -111,25 +115,20 @@ class _TextPreScreenState extends State<TextPreScreen> {
   Future<void> _printNow() async {
     final text = _controller.text.trim();
     if (text.isEmpty) {
-      _show('Please enter some text.');
+      _show(t(context, 'enter_text'));
       return;
     }
     if (_busy) return;
     setState(() => _busy = true);
     try {
       final bytes = await _saveTextPdf(text);
-      await Printing.layoutPdf(
-        name: 'smart_text.pdf',
-        onLayout: (_) async => bytes,
-      ).timeout(const Duration(seconds: 20)).catchError((error) {
-        debugPrint('Smart Text print dialog failed: $error');
-        return false;
-      });
+      if (!mounted) return;
+      await openPrintLayout(name: 'smart_text.pdf', bytes: bytes);
       if (!mounted) return;
     } catch (error) {
       debugPrint('Smart Text print failed: $error');
       if (mounted) {
-        _show('Could not print/save text: $error');
+        _show(t(context, 'could_not_print_text', namedArgs: {'error': '$error'}));
       }
     } finally {
       if (mounted) {
@@ -144,7 +143,10 @@ class _TextPreScreenState extends State<TextPreScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppBusyOverlay(
+      busy: _busy,
+      message: t(context, 'please_wait'),
+      child: Scaffold(
       backgroundColor: const Color(0xFFF4F7FB),
       appBar: AppBar(
         elevation: 0,
@@ -158,14 +160,17 @@ class _TextPreScreenState extends State<TextPreScreen> {
           ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          "Smart Text",
+        title: Text(
+          t(context, 'feat_smart_text'),
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
             color: Color(0xFF2B3A55),
           ),
         ),
+        actions: const [
+          ProAppBarButton(),
+        ],
       ),
       body: Column(
         children: [
@@ -187,8 +192,8 @@ class _TextPreScreenState extends State<TextPreScreen> {
                   color: Color(0xFF2B3A55),
                   height: 1.5,
                 ),
-                decoration: const InputDecoration(
-                  hintText: "Type or paste your text here to print...",
+                decoration: InputDecoration(
+                  hintText: t(context, 'text_hint'),
                   hintStyle: TextStyle(color: Color(0xFF94A3B8), fontSize: 16),
                   border: InputBorder.none,
                 ),
@@ -223,10 +228,10 @@ class _TextPreScreenState extends State<TextPreScreen> {
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: _saveNow,
+                            onPressed: afterInterstitial(_saveNow),
                             icon: const Icon(Icons.save_rounded, size: 20),
-                            label: const Text(
-                              'Save',
+                            label: Text(
+                              t(context, 'save'),
                               style: TextStyle(fontWeight: FontWeight.w700),
                             ),
                             style: OutlinedButton.styleFrom(
@@ -242,14 +247,14 @@ class _TextPreScreenState extends State<TextPreScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed: _printNow,
+                            onPressed: afterInterstitial(_printNow),
                             icon: const Icon(Icons.print_rounded, size: 20),
-                            label: const Text(
-                              'Print',
+                            label: Text(
+                              t(context, 'print'),
                               style: TextStyle(fontWeight: FontWeight.w700),
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2F80ED),
+                              backgroundColor: AppTheme.actionColor,
                               foregroundColor: Colors.white,
                               elevation: 0,
                               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -265,6 +270,7 @@ class _TextPreScreenState extends State<TextPreScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 }

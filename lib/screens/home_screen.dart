@@ -1,6 +1,8 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../pre_review_screens/doc_pre.dart';
 import '../pre_review_screens/page_layout_screen.dart';
 import '../pre_review_screens/photo_pre.dart';
@@ -12,8 +14,14 @@ import '../pre_review_screens/contacts_screen.dart';
 import '../pre_review_screens/pdf_to_image_screen.dart';
 import '../pre_review_screens/image_to_pdf_screen.dart';
 import '../pre_review_screens/text_pre.dart';
+import '../ads/ad_service.dart';
+import '../config/pro_theme.dart';
+import '../l10n/labels.dart';
+import '../services/billing_service.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/pro_crown_icon.dart';
 import 'learn_more_screen.dart';
+import 'pro_screen.dart';
 import 'web_page.dart';
 
 class PrinterHomeScreen extends StatelessWidget {
@@ -41,11 +49,10 @@ class PrinterHomeScreen extends StatelessWidget {
                       );
                     },
                   ),
-                  const SizedBox(height: 0),
                   _FeatureGrid(
                     actions: [
                       _HomeAction(
-                        title: "Smart Text",
+                        title: 'feat_smart_text'.tr(),
                         assetPath: 'assets/images/text.png',
                         onTap: () {
                           Navigator.push(
@@ -57,7 +64,7 @@ class PrinterHomeScreen extends StatelessWidget {
                         },
                       ),
                       _HomeAction(
-                        title: "Documents",
+                        title: 'feat_documents'.tr(),
                         assetPath: 'assets/images/doc.png',
                         onTap: () async {
                           final result = await FilePicker.platform.pickFiles(
@@ -90,8 +97,8 @@ class PrinterHomeScreen extends StatelessWidget {
                         },
                       ),
                       _HomeAction(
-                        title: "Photo Print",
-                        assetPath: 'assets/images/printer.png',
+                        title: 'feat_photo'.tr(),
+                        assetPath: 'assets/images/photo_print.png',
                         onTap: () async {
                           final picker = ImagePicker();
                           final pickedList = await picker.pickMultiImage(
@@ -130,7 +137,7 @@ class PrinterHomeScreen extends StatelessWidget {
                         },
                       ),
                       _HomeAction(
-                        title: "Page Layout",
+                        title: 'feat_layout'.tr(),
                         assetPath: 'assets/images/images.png',
                         onTap: () async {
                           final result = await FilePicker.platform.pickFiles(
@@ -169,7 +176,7 @@ class PrinterHomeScreen extends StatelessWidget {
                             }
                             AppSnack.show(
                               context,
-                              'Please select only PDF or images.',
+                              t(context, 'select_pdf_or_images'),
                             );
                             return;
                           }
@@ -180,7 +187,7 @@ class PrinterHomeScreen extends StatelessWidget {
                             }
                             AppSnack.show(
                               context,
-                              'Please select only one PDF.',
+                              t(context, 'select_one_pdf'),
                             );
                             return;
                           }
@@ -213,7 +220,7 @@ class PrinterHomeScreen extends StatelessWidget {
                         },
                       ),
                       _HomeAction(
-                        title: "Camera",
+                        title: 'feat_camera'.tr(),
                         assetPath: 'assets/images/camera.png',
                         onTap: () async {
                           final picker = ImagePicker();
@@ -237,7 +244,7 @@ class PrinterHomeScreen extends StatelessWidget {
                         },
                       ),
                       _HomeAction(
-                        title: "Doc Scanner",
+                        title: 'feat_scan'.tr(),
                         assetPath: 'assets/images/scan.png',
                         onTap: () {
                           Navigator.push(
@@ -249,7 +256,7 @@ class PrinterHomeScreen extends StatelessWidget {
                         },
                       ),
                       _HomeAction(
-                        title: "Split PDF",
+                        title: 'feat_split'.tr(),
                         assetPath: 'assets/images/split.png',
                         onTap: () async {
                           final result = await FilePicker.platform.pickFiles(
@@ -277,8 +284,8 @@ class PrinterHomeScreen extends StatelessWidget {
                         },
                       ),
                       _HomeAction(
-                        title: "Merge PDF",
-                        assetPath: 'assets/images/merge.webp',
+                        title: 'feat_merge'.tr(),
+                        assetPath: 'assets/images/merge.png',
                         onTap: () async {
                           final result = await FilePicker.platform.pickFiles(
                             type: FileType.custom,
@@ -308,7 +315,7 @@ class PrinterHomeScreen extends StatelessWidget {
                         },
                       ),
                       _HomeAction(
-                        title: "PDF to Image",
+                        title: 'feat_pdf_to_image'.tr(),
                         assetPath: 'assets/images/pdf_to_image.png',
                         onTap: () async {
                           final result = await FilePicker.platform.pickFiles(
@@ -336,7 +343,7 @@ class PrinterHomeScreen extends StatelessWidget {
                         },
                       ),
                       _HomeAction(
-                        title: "Image to PDF",
+                        title: 'feat_image_to_pdf'.tr(),
                         assetPath: 'assets/images/image_to_pdf.png',
                         onTap: () async {
                           final result = await FilePicker.platform.pickFiles(
@@ -371,7 +378,7 @@ class PrinterHomeScreen extends StatelessWidget {
                         },
                       ),
                       _HomeAction(
-                        title: "Contacts",
+                        title: 'feat_contacts'.tr(),
                         assetPath: 'assets/images/contect.png',
                         onTap: () {
                           Navigator.push(
@@ -383,7 +390,7 @@ class PrinterHomeScreen extends StatelessWidget {
                         },
                       ),
                       _HomeAction(
-                        title: "Web Print",
+                        title: 'feat_web'.tr(),
                         assetPath: 'assets/images/webpage.png',
                         onTap: () {
                           Navigator.push(
@@ -411,13 +418,11 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: AppTheme.darkHeaderOverlay,
+      child: Container(
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFF4D6FA6), Color(0xFF344C73)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        gradient: AppTheme.gradientBackground,
       ),
       child: SafeArea(
         bottom: false,
@@ -430,8 +435,8 @@ class _TopBar extends StatelessWidget {
               Expanded(
                 child: Row(
                   children: [
-                    const Text(
-                      "Printer App",
+                    Text(
+                      t(context, 'app_name'),
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 20,
@@ -443,11 +448,27 @@ class _TopBar extends StatelessWidget {
                   ],
                 ),
               ),
-              // PRO button disabled (in-app purchase removed).
-              // _ProButton(onTap: onProTap),
+              ListenableBuilder(
+                listenable: BillingService.instance,
+                builder: (context, _) {
+                  if (BillingService.instance.isPro) {
+                    return const SizedBox.shrink();
+                  }
+                  return IconButton(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const ProScreen()),
+                      );
+                    },
+                    tooltip: 'go_pro'.tr(),
+                    icon: const ProCrownIcon(size: 30),
+                  );
+                },
+              ),
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -511,9 +532,9 @@ class _TopBar extends StatelessWidget {
 //               t,
 //             )!;
 //             final c1 =
-//                 Color.lerp(const Color(0xFF2F80ED), const Color(0xFF6FA8FF), t)!;
+//                 Color.lerp(AppTheme.actionColor, const Color(0xFF6FA8FF), t)!;
 //             final c2 =
-//                 Color.lerp(const Color(0xFF4D6FA6), const Color(0xFF2F80ED), t)!;
+//                 Color.lerp(const Color(0xFF4D6FA6), AppTheme.actionColor, t)!;
 //             final c3 =
 //                 Color.lerp(const Color(0xFF5B86E5), const Color(0xFF4D6FA6), t)!;
 //             final c4 =
@@ -641,7 +662,7 @@ class _PrinterStatusCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Text(
+              Text(
                 "My Printer:",
                 style: TextStyle(
                   fontSize: 14,
@@ -650,7 +671,7 @@ class _PrinterStatusCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 6),
-              const Expanded(
+              Expanded(
                 child: Text(
                   "HP LaserJet Pro",
                   maxLines: 1,
@@ -707,7 +728,7 @@ class _PrinterStatusCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    const Text(
+                    Text(
                       "Ready to Print",
                       style: TextStyle(
                         fontSize: 12,
@@ -770,8 +791,8 @@ class _WelcomeBanner extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  "Welcome to Printer App!",
+                Text(
+                  'welcome_title'.tr(),
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -779,8 +800,8 @@ class _WelcomeBanner extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  "Manage all your printing needs easily",
+                Text(
+                  'welcome_sub'.tr(),
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -799,8 +820,8 @@ class _WelcomeBanner extends StatelessWidget {
                       color: const Color(0xFF3E6FB5),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Text(
-                      "Learn More",
+                    child: Text(
+                      'learn_more'.tr(),
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,
@@ -847,7 +868,11 @@ class _FeatureGrid extends StatelessWidget {
       itemBuilder: (context, index) {
         final action = actions[index];
         return GestureDetector(
-          onTap: action.onTap,
+          onTap: () {
+            AdService.instance.showSelectInterstitialThen(() async {
+              action.onTap();
+            });
+          },
           child: Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(

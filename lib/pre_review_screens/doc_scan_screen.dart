@@ -1,18 +1,21 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:smart_printer/config/pro_theme.dart';
+import '../l10n/labels.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
+import '../ads/ad_service.dart';
 import '../database/data-base.dart';
 import '../models/print_history_model.dart';
+import '../widgets/app_loader.dart';
+import '../widgets/pro_crown_icon.dart';
 import '../widgets/app_snack.dart';
 
 class DocScanScreen extends StatefulWidget {
@@ -40,14 +43,14 @@ class _DocScanScreenState extends State<DocScanScreen> {
       if (!mounted) {
         return;
       }
-      AppSnack.show(context, 'OCR is not supported on web.');
+      AppSnack.show(context, t(context, 'ocr_web'));
       return;
     }
     if (!Platform.isAndroid && !Platform.isIOS) {
       if (!mounted) {
         return;
       }
-      AppSnack.show(context, 'OCR works only on Android and iOS.');
+      AppSnack.show(context, t(context, 'ocr_mobile'));
       return;
     }
     final picked = await _picker.pickImage(
@@ -83,7 +86,7 @@ class _DocScanScreenState extends State<DocScanScreen> {
       if (!mounted) {
         return;
       }
-      AppSnack.show(context, 'Failed to scan text.');
+      AppSnack.show(context, t(context, 'failed_scan'));
     } finally {
       if (mounted) {
         setState(() => _isBusy = false);
@@ -143,17 +146,17 @@ class _DocScanScreenState extends State<DocScanScreen> {
     final text = _controller.text.trim();
     if (text.isEmpty) {
       if (!mounted) return;
-      AppSnack.show(context, 'No text to save.');
+      AppSnack.show(context, t(context, 'no_text_save'));
       return;
     }
     setState(() => _isBusy = true);
     try {
       await _persistScanPdf(text);
       if (!mounted) return;
-      AppSnack.show(context, 'Saved to Files');
+      AppSnack.show(context, t(context, 'saved_to_files'));
     } catch (error) {
       debugPrint('Doc scan save failed: $error');
-      if (mounted) AppSnack.show(context, 'Could not save scan: $error');
+      if (mounted) AppSnack.show(context, t(context, 'could_not_save_scan', namedArgs: {'error': '$error'}));
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
@@ -163,25 +166,18 @@ class _DocScanScreenState extends State<DocScanScreen> {
     final text = _controller.text.trim();
     if (text.isEmpty) {
       if (!mounted) return;
-      AppSnack.show(context, 'No text to print.');
+      AppSnack.show(context, t(context, 'no_text_print'));
       return;
     }
     setState(() => _isBusy = true);
     try {
       final bytes = await _persistScanPdf(text);
-      unawaited(
-        Printing.layoutPdf(
-          name: 'doc_scan.pdf',
-          onLayout: (_) async => bytes,
-        ).timeout(const Duration(seconds: 20)).catchError((error) {
-          debugPrint('Doc scan print dialog failed: $error');
-          return false;
-        }),
-      );
+      if (!mounted) return;
+      await openPrintLayout(name: 'doc_scan.pdf', bytes: bytes);
       if (!mounted) return;
     } catch (error) {
       debugPrint('Doc scan print failed: $error');
-      if (mounted) AppSnack.show(context, 'Could not print/save scan: $error');
+      if (mounted) AppSnack.show(context, t(context, 'could_not_print_scan', namedArgs: {'error': '$error'}));
     } finally {
       if (mounted) setState(() => _isBusy = false);
     }
@@ -189,7 +185,10 @@ class _DocScanScreenState extends State<DocScanScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppBusyOverlay(
+      busy: _isBusy,
+      message: _controller.text.trim().isEmpty ? t(context, 'scanning') : t(context, 'please_wait'),
+      child: Scaffold(
       backgroundColor: const Color(0xFFF4F7FB),
       appBar: AppBar(
         elevation: 0,
@@ -204,14 +203,17 @@ class _DocScanScreenState extends State<DocScanScreen> {
           ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'Doc Scanner',
+        title: Text(
+          t(context, 'feat_scan'),
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
             color: Color(0xFF2B3A55),
           ),
         ),
+        actions: const [
+          ProAppBarButton(),
+        ],
       ),
       body: Column(
         children: [
@@ -227,6 +229,7 @@ class _DocScanScreenState extends State<DocScanScreen> {
                   Expanded(
                     child: _TextCard(
                       controller: _controller,
+                      enabled: !_isBusy,
                     ),
                   ),
                 ],
@@ -234,12 +237,13 @@ class _DocScanScreenState extends State<DocScanScreen> {
             ),
           ),
           _BottomActions(
-            onSave: _isBusy ? null : _saveScan,
+            onSave: _isBusy ? null : afterInterstitial(_saveScan),
             onCapture: _isBusy ? null : _captureAndScan,
-            onPrint: _isBusy ? null : _printText,
+            onPrint: _isBusy ? null : afterInterstitial(_printText),
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -275,14 +279,14 @@ class _ScanHeader extends StatelessWidget {
             ),
             child: const Icon(
               Icons.document_scanner_rounded,
-              color: Color(0xFF2F80ED),
+              color: AppTheme.actionColor,
               size: 18,
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              isBusy ? 'Scanning...' : 'Capture a document to extract text',
+              isBusy ? t(context, 'scanning_dots') : t(context, 'capture_hint'),
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
@@ -297,9 +301,10 @@ class _ScanHeader extends StatelessWidget {
 }
 
 class _TextCard extends StatelessWidget {
-  const _TextCard({required this.controller});
+  const _TextCard({required this.controller, required this.enabled});
 
   final TextEditingController controller;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -320,12 +325,12 @@ class _TextCard extends StatelessWidget {
         controller: controller,
         maxLines: null,
         expands: true,
-        enabled: false,
-        readOnly: true,
+        enabled: enabled,
+        readOnly: !enabled,
         style: const TextStyle(fontSize: 14, color: Color(0xFF2B3A55)),
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
           border: InputBorder.none,
-          hintText: 'Scanned text will appear here...',
+          hintText: t(context, 'scan_hint'),
           hintStyle: TextStyle(color: Color(0xFF94A3B8)),
         ),
       ),
@@ -366,8 +371,8 @@ class _BottomActions extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: onSave,
                 icon: const Icon(Icons.save_rounded, size: 18),
-                label: const Text(
-                  'Save',
+                label: Text(
+                  t(context, 'save'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -385,8 +390,8 @@ class _BottomActions extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: onCapture,
                 icon: const Icon(Icons.camera_alt_rounded, size: 18),
-                label: const Text(
-                  'Scan',
+                label: Text(
+                  t(context, 'scan'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -404,12 +409,12 @@ class _BottomActions extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: onPrint,
                 icon: const Icon(Icons.print_rounded, size: 18),
-                label: const Text(
-                  'Print',
+                label: Text(
+                  t(context, 'print'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2F80ED),
+                  backgroundColor: AppTheme.actionColor,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(vertical: 14),

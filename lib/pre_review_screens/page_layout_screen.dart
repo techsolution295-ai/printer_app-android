@@ -4,15 +4,20 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:smart_printer/config/pro_theme.dart';
+import '../l10n/labels.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 import 'package:pdfx/pdfx.dart' as pdfx;
 
+import '../ads/ad_service.dart';
 import '../database/data-base.dart';
 import '../models/print_history_model.dart';
+import '../widgets/app_loader.dart';
+import '../widgets/pro_crown_icon.dart';
 import '../widgets/app_snack.dart';
+
 class PageLayoutScreen extends StatefulWidget {
   const PageLayoutScreen.pdf({super.key, required this.pdfPath})
       : images = const [];
@@ -53,17 +58,22 @@ class _PageLayoutScreenState extends State<PageLayoutScreen> {
 
   Future<void> _loadPdf() async {
     setState(() => _isLoading = true);
-    final doc = await pdfx.PdfDocument.openFile(widget.pdfPath!);
-    _document = doc;
-    _pageCount = doc.pagesCount;
-    _pageOrder
-      ..clear()
-      ..addAll(List<int>.generate(_pageCount, (index) => index + 1));
-    _pageThumbs.clear();
-    if (!mounted) {
-      return;
+    try {
+      final doc = await pdfx.PdfDocument.openFile(widget.pdfPath!);
+      _document = doc;
+      _pageCount = doc.pagesCount;
+      _pageOrder
+        ..clear()
+        ..addAll(List<int>.generate(_pageCount, (index) => index + 1));
+      _pageThumbs.clear();
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+    } catch (error) {
+      debugPrint('Page layout load failed: $error');
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      AppSnack.show(context, t(context, 'could_not_open_pdf'));
     }
-    setState(() => _isLoading = false);
   }
 
   @override
@@ -75,7 +85,10 @@ class _PageLayoutScreenState extends State<PageLayoutScreen> {
   @override
   Widget build(BuildContext context) {
     final readyToExport = !_isPdf || (_document != null && _pageOrder.isNotEmpty);
-    return Scaffold(
+    return AppBusyOverlay(
+      busy: _busy,
+      message: t(context, 'please_wait'),
+      child: Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         elevation: 0,
@@ -90,14 +103,17 @@ class _PageLayoutScreenState extends State<PageLayoutScreen> {
           ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'Page Layout',
+        title: Text(
+          t(context, 'feat_layout'),
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
             color: Color(0xFF2B3A55),
           ),
         ),
+        actions: const [
+          ProAppBarButton(),
+        ],
       ),
       body: Column(
         children: [
@@ -106,7 +122,7 @@ class _PageLayoutScreenState extends State<PageLayoutScreen> {
             child: Row(
               children: [
                 Text(
-                  _isPdf ? 'Drag to reorder pages' : 'Drag to reorder images',
+                  _isPdf ? t(context, 'drag_pages') : t(context, 'drag_images'),
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     color: Colors.black87,
@@ -124,11 +140,12 @@ class _PageLayoutScreenState extends State<PageLayoutScreen> {
           _BottomActions(
             busy: _busy,
             enabled: readyToExport,
-            onSave: _saveOrder,
-            onPrint: _printOrder,
+            onSave: afterInterstitial(_saveOrder),
+            onPrint: afterInterstitial(_printOrder),
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -207,7 +224,7 @@ class _PageLayoutScreenState extends State<PageLayoutScreen> {
   Future<void> _saveOrder() async {
     if ((_isPdf && (_document == null || _pageOrder.isEmpty)) ||
         (!_isPdf && _imageOrder.isEmpty)) {
-      AppSnack.show(context, 'No pages selected.');
+      AppSnack.show(context, t(context, 'no_pages_selected'));
       return;
     }
 
@@ -235,11 +252,11 @@ class _PageLayoutScreenState extends State<PageLayoutScreen> {
       if (!mounted) {
         return;
       }
-      AppSnack.show(context, 'Saved to Files');
+      AppSnack.show(context, t(context, 'saved_to_files'));
     } catch (error) {
       debugPrint('Save order failed: $error');
       if (mounted) {
-        AppSnack.show(context, 'Could not save PDF: $error');
+        AppSnack.show(context, t(context, 'could_not_save_pdf', namedArgs: {'error': '$error'}));
       }
     } finally {
       if (mounted) {
@@ -251,7 +268,7 @@ class _PageLayoutScreenState extends State<PageLayoutScreen> {
   Future<void> _printOrder() async {
     if ((_isPdf && (_document == null || _pageOrder.isEmpty)) ||
         (!_isPdf && _imageOrder.isEmpty)) {
-      AppSnack.show(context, 'No pages selected.');
+      AppSnack.show(context, t(context, 'no_pages_selected'));
       return;
     }
 
@@ -261,19 +278,12 @@ class _PageLayoutScreenState extends State<PageLayoutScreen> {
       if (bytes.isEmpty) {
         throw StateError('Generated PDF is empty.');
       }
-      unawaited(
-        Printing.layoutPdf(
-          name: 'page_layout.pdf',
-          onLayout: (_) async => bytes,
-        ).timeout(const Duration(seconds: 20)).catchError((error) {
-          debugPrint('Page Layout print dialog failed: $error');
-          return false;
-        }),
-      );
+      if (!mounted) return;
+      await openPrintLayout(name: 'page_layout.pdf', bytes: bytes);
     } catch (error) {
       debugPrint('Print order failed: $error');
       if (mounted) {
-        AppSnack.show(context, 'Could not start print: $error');
+        AppSnack.show(context, t(context, 'could_not_start_print', namedArgs: {'error': '$error'}));
       }
     } finally {
       if (mounted) {
@@ -284,12 +294,12 @@ class _PageLayoutScreenState extends State<PageLayoutScreen> {
 
   Widget _buildPdfList() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return AppLoader(message: t(context, 'loading_pages'));
     }
     if (_pageCount == 0 || _document == null) {
-      return const Center(
+      return Center(
         child: Text(
-          'No pages found',
+          t(context, 'no_pages_found'),
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
@@ -318,8 +328,8 @@ class _PageLayoutScreenState extends State<PageLayoutScreen> {
         final pageNumber = _pageOrder[index];
         return _PageTile(
           key: ValueKey('page_$pageNumber'),
-          title: 'Page $pageNumber',
-          subtitle: 'PDF preview',
+          title: t(context, 'page_n', namedArgs: {'n': '$pageNumber'}),
+          subtitle: t(context, 'pdf_preview_title'),
           leading: _PdfThumb(
             future: _getPageThumb(pageNumber),
           ),
@@ -369,9 +379,9 @@ class _PageLayoutScreenState extends State<PageLayoutScreen> {
 
   Widget _buildImageList() {
     if (_imageOrder.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
-          'No images selected',
+          t(context, 'no_images_selected'),
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
@@ -400,7 +410,7 @@ class _PageLayoutScreenState extends State<PageLayoutScreen> {
         final file = _imageOrder[index];
         return _PageTile(
           key: ValueKey('img_${file.path ?? index}'),
-          title: 'Image ${index + 1}',
+          title: t(context, 'image_n', namedArgs: {'n': '${index + 1}'}),
           subtitle: file.name,
           leading: _ImageThumb(path: file.path),
         );
@@ -587,8 +597,8 @@ class _BottomActions extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: busy || !enabled ? null : onSave,
                 icon: const Icon(Icons.check_circle_rounded, size: 20),
-                label: const Text(
-                  'Save Order',
+                label: Text(
+                  t(context, 'save_order'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -606,12 +616,12 @@ class _BottomActions extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: busy || !enabled ? null : onPrint,
                 icon: const Icon(Icons.print_rounded, size: 20),
-                label: const Text(
-                  'Print',
+                label: Text(
+                  t(context, 'print'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2F80ED),
+                  backgroundColor: AppTheme.actionColor,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(vertical: 14),

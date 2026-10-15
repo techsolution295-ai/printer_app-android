@@ -1,6 +1,9 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:smart_printer/config/pro_theme.dart';
 import 'package:smart_printer/screens/setting%20screen.dart';
 import 'home_screen.dart';
+import 'printables_screen.dart';
 import 'files_screen.dart';
 
 class MainScreen extends StatefulWidget {
@@ -13,16 +16,27 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = const [
-    PrinterHomeScreen(),
-    FilesScreen(),
-    SettingsScreen(),
-  ];
+  Widget _page(int index) {
+    switch (index) {
+      case 0:
+        return const PrinterHomeScreen();
+      case 1:
+        return const PrintablesScreen();
+      case 2:
+        return const FilesScreen();
+      default:
+        return const SettingsScreen();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final localeKey = context.locale.toString();
     return Scaffold(
-      body: _screens[_currentIndex],
+      body: KeyedSubtree(
+        key: ValueKey(localeKey),
+        child: _page(_currentIndex),
+      ),
 
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
@@ -32,7 +46,7 @@ class _MainScreenState extends State<MainScreen> {
         backgroundColor: Colors.white,
         elevation: 8,
 
-        selectedItemColor: const Color(0xFF2979FF),
+        selectedItemColor: AppTheme.actionColor,
         unselectedItemColor: Colors.grey,
 
         selectedLabelStyle: const TextStyle(
@@ -51,15 +65,20 @@ class _MainScreenState extends State<MainScreen> {
               width: 22,
               height: 22,
               color: _currentIndex == 0
-                  ? const Color(0xFF2979FF)
+                  ? AppTheme.actionColor
                   : Colors.grey,
             ),
-            label: 'Home',
+            label: 'nav_home'.tr(context: context),
           ),
 
-          const BottomNavigationBarItem(
+          BottomNavigationBarItem(
+            icon: Icon(Icons.grid_view_rounded, size: 23),
+            label: 'nav_printables'.tr(context: context),
+          ),
+
+          BottomNavigationBarItem(
             icon: Icon(Icons.folder_open_rounded, size: 23),
-            label: 'Files',
+            label: 'nav_files'.tr(context: context),
           ),
 
           BottomNavigationBarItem(
@@ -67,11 +86,11 @@ class _MainScreenState extends State<MainScreen> {
               'assets/images/setting.png',
               width: 22,
               height: 22,
-              color: _currentIndex == 2
-                  ? const Color(0xFF2979FF)
+              color: _currentIndex == 3
+                  ? AppTheme.actionColor
                   : Colors.grey,
             ),
-            label: 'Settings',
+            label: 'nav_settings'.tr(context: context),
           ),
         ],
       ),

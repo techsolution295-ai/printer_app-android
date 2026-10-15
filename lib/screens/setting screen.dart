@@ -1,8 +1,15 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:smart_printer/config/pro_theme.dart';
 import 'package:smart_printer/constants/app_links.dart';
+import 'package:smart_printer/services/app_language_config.dart';
+import 'package:smart_printer/services/billing_service.dart';
 import 'package:smart_printer/widgets/app_snack.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import 'language_selection_screen.dart';
+import 'pro_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -18,7 +25,7 @@ class SettingsScreen extends StatelessWidget {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
+        backgroundColor: AppTheme.pageBackground,
         appBar: AppBar(
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.transparent,
@@ -26,12 +33,12 @@ class SettingsScreen extends StatelessWidget {
           scrolledUnderElevation: 0,
           centerTitle: true,
           systemOverlayStyle: overlayStyle,
-          title: const Text(
-            'Settings',
+          title: Text(
+            'settings'.tr(),
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF0F172A),
+              color: AppTheme.textDark,
             ),
           ),
         ),
@@ -39,38 +46,65 @@ class SettingsScreen extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
           children: [
             _SimpleSection(
-              title: 'General',
+              title: 'general'.tr(),
               children: [
+                ListenableBuilder(
+                  listenable: BillingService.instance,
+                  builder: (context, _) {
+                    if (BillingService.instance.isPro) {
+                      return const SizedBox.shrink();
+                    }
+                    return Column(
+                      children: [
+                        _SimpleTile(
+                          icon: Icons.workspace_premium_rounded,
+                          title: 'go_pro'.tr(),
+                          subtitle: 'unlock_all_features'.tr(),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const ProScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        const _SimpleDivider(),
+                      ],
+                    );
+                  },
+                ),
+                const _LanguageTile(),
+                const _SimpleDivider(),
                 _SimpleTile(
                   icon: Icons.support_agent_rounded,
-                  title: 'Support',
-                  subtitle: 'Get help or report an issue',
+                  title: 'support'.tr(),
+                  subtitle: 'support_sub'.tr(),
                   onTap: () => _launchUrl(context, AppLinks.supportEmailUri),
                 ),
                 const _SimpleDivider(),
                 _SimpleTile(
                   icon: Icons.star_border_rounded,
-                  title: 'Rate App',
-                  subtitle: 'Rate us on the store',
-                  onTap: () => _showRateDialog(context),
+                  title: 'rate_app'.tr(),
+                  subtitle: 'rate_sub'.tr(),
+                  onTap: () => _openPlayStore(context),
                 ),
               ],
             ),
             const SizedBox(height: 16),
             _SimpleSection(
-              title: 'Legal',
+              title: 'legal'.tr(),
               children: [
                 _SimpleTile(
                   icon: Icons.privacy_tip_outlined,
-                  title: 'Privacy Policy',
-                  subtitle: 'How we handle your data',
+                  title: 'privacy'.tr(),
+                  subtitle: 'privacy_sub'.tr(),
                   onTap: () => _launchUrl(context, AppLinks.privacyPolicy),
                 ),
                 const _SimpleDivider(),
                 _SimpleTile(
                   icon: Icons.description_outlined,
-                  title: 'Terms of Use',
-                  subtitle: 'Our terms and conditions',
+                  title: 'terms'.tr(),
+                  subtitle: 'terms_sub'.tr(),
                   onTap: () => _launchUrl(context, AppLinks.termsOfService),
                 ),
               ],
@@ -90,66 +124,77 @@ class SettingsScreen extends StatelessWidget {
     if (!launched) {
       AppSnack.show(
         context,
-        'Could not open link.',
+        'could_not_open_link'.tr(),
         icon: Icons.error_outline_rounded,
       );
     }
   }
 
-  static void _showRateDialog(BuildContext context) {
-    var selected = 0;
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: const Text('Rate this app'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('How was your experience using Smart Printer?'),
-              const SizedBox(height: 20),
-              StatefulBuilder(
-                builder: (context, setState) {
-                  return Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(5, (index) {
-                      final isActive = index < selected;
-                      return IconButton(
-                        onPressed: () => setState(() => selected = index + 1),
-                        icon: Icon(
-                          isActive ? Icons.star : Icons.star_border,
-                          color: isActive ? Colors.amber : Colors.grey.shade300,
-                          size: 32,
-                        ),
-                      );
-                    }),
-                  );
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Later'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                AppSnack.show(context, 'Thanks for your feedback!');
-              },
-              style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              child: const Text('Submit'),
-            ),
-          ],
+  static Future<void> _openPlayStore(BuildContext context) async {
+    final targets = <Uri>[
+      AppLinks.playStoreMarket,
+      AppLinks.playStoreWeb,
+    ];
+    for (final uri in targets) {
+      try {
+        final opened = await launchUrl(
+          uri,
+          mode: LaunchMode.externalNonBrowserApplication,
         );
+        if (opened) return;
+      } catch (_) {}
+    }
+    try {
+      final opened = await launchUrl(
+        AppLinks.playStoreWeb,
+        mode: LaunchMode.externalApplication,
+      );
+      if (opened || !context.mounted) return;
+    } catch (_) {}
+    if (!context.mounted) return;
+    AppSnack.show(
+      context,
+      'could_not_open_link'.tr(),
+      icon: Icons.error_outline_rounded,
+    );
+  }
+}
+
+class _LanguageTile extends StatefulWidget {
+  const _LanguageTile();
+
+  @override
+  State<_LanguageTile> createState() => _LanguageTileState();
+}
+
+class _LanguageTileState extends State<_LanguageTile> {
+  String? _label;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final saved = await AppLanguageConfig.savedCountryId();
+    if (!mounted) return;
+    final label = saved != null
+        ? AppLanguageConfig.optionById(saved).label
+        : AppLanguageConfig.optionForLocale(context.locale).label;
+    setState(() => _label = label);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    context.locale;
+    return _SimpleTile(
+      icon: Icons.language_rounded,
+      title: 'language'.tr(),
+      subtitle: _label ?? AppLanguageConfig.optionForLocale(context.locale).label,
+      onTap: () async {
+        await showLanguageSelectionSheet(context);
+        if (mounted) await _refresh();
       },
     );
   }
@@ -173,7 +218,7 @@ class _SimpleSection extends StatelessWidget {
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF475569),
+              color: AppTheme.secondaryColor,
             ),
           ),
         ),
@@ -181,7 +226,7 @@ class _SimpleSection extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: AppTheme.borderColor),
           ),
           child: Column(children: children),
         ),
@@ -212,17 +257,17 @@ class _SimpleTile extends StatelessWidget {
         height: 34,
         width: 34,
         decoration: BoxDecoration(
-          color: const Color(0xFFF1F5F9),
+          color: AppTheme.tintColor,
           borderRadius: BorderRadius.circular(9),
         ),
-        child: Icon(icon, size: 18, color: const Color(0xFF334155)),
+        child: Icon(icon, size: 18, color: AppTheme.secondaryColor),
       ),
       title: Text(
         title,
         style: const TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w600,
-          color: Color(0xFF0F172A),
+          color: AppTheme.textDark,
         ),
       ),
       subtitle: subtitle == null
@@ -231,12 +276,12 @@ class _SimpleTile extends StatelessWidget {
               subtitle!,
               style: const TextStyle(
                 fontSize: 12,
-                color: Color(0xFF64748B),
+                color: AppTheme.textLight,
               ),
             ),
       trailing: const Icon(
         Icons.chevron_right_rounded,
-        color: Color(0xFF94A3B8),
+        color: AppTheme.mutedColor,
       ),
     );
   }
@@ -252,7 +297,7 @@ class _SimpleDivider extends StatelessWidget {
       thickness: 1,
       indent: 62,
       endIndent: 14,
-      color: Color(0xFFF1F5F9),
+      color: AppTheme.borderColor,
     );
   }
 }

@@ -1,30 +1,42 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:smart_printer/config/pro_theme.dart';
+import '../l10n/labels.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdfx/pdfx.dart';
-import 'package:printing/printing.dart';
 
+import '../ads/ad_service.dart';
 import '../database/data-base.dart';
 import '../models/print_history_model.dart';
+import '../widgets/app_loader.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/pro_crown_icon.dart';
 
-class DocPreScreen extends StatelessWidget {
+class DocPreScreen extends StatefulWidget {
   const DocPreScreen({super.key, required this.file});
 
   final PlatformFile file;
+
+  @override
+  State<DocPreScreen> createState() => _DocPreScreenState();
+}
+
+class _DocPreScreenState extends State<DocPreScreen> {
+  bool _busy = false;
+
+  PlatformFile get file => widget.file;
 
   Future<Directory> _getSaveDir() async {
     final dir = await getApplicationDocumentsDirectory();
     return dir;
   }
 
-  Future<File?> _copyToDownloads(BuildContext context) async {
+  Future<File?> _copyToDownloads() async {
     final filePath = file.path ?? '';
     if (filePath.isEmpty || !File(filePath).existsSync()) {
-      AppSnack.show(context, 'File not found.');
+      AppSnack.show(context, t(context, 'file_not_found'));
       return null;
     }
     final dir = await _getSaveDir();
@@ -33,55 +45,63 @@ class DocPreScreen extends StatelessWidget {
     return target;
   }
 
-  Future<void> _saveFile(BuildContext context) async {
-    final saved = await _copyToDownloads(context);
-    if (saved == null) return;
-    await HistoryDB.instance.insertHistory(
-      PrintHistory(
-        title: file.name,
-        type: 'file',
-        filePath: saved.path,
-        createdAt: DateTime.now().toIso8601String(),
-      ),
-    );
-    if (!context.mounted) return;
-    AppSnack.show(context, 'Saved to Files');
-  }
-
-  Future<void> _printFile(BuildContext context) async {
-    final filePath = file.path ?? '';
-    if (filePath.isEmpty || !File(filePath).existsSync()) {
-      AppSnack.show(context, 'File not found.');
-      return;
-    }
-    final extension = _extensionOf(file.name);
-    if (extension != 'PDF') {
-      AppSnack.show(context, 'Only PDF printing is supported.');
-      return;
-    }
-    final bytes = await File(filePath).readAsBytes();
-    final saved = await _copyToDownloads(context);
-    if (saved != null) {
+  Future<void> _saveFile() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final saved = await _copyToDownloads();
+      if (saved == null) return;
       await HistoryDB.instance.insertHistory(
         PrintHistory(
           title: file.name,
-          type: 'pdf',
+          type: 'file',
           filePath: saved.path,
           createdAt: DateTime.now().toIso8601String(),
         ),
       );
+      if (!mounted) return;
+      AppSnack.show(context, t(context, 'saved_to_files'));
+    } catch (error) {
+      debugPrint('Document save failed: $error');
+      if (mounted) AppSnack.show(context, t(context, 'could_not_save_file'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
-    unawaited(
-      Printing.layoutPdf(
-        name: '${file.name}.pdf',
-        onLayout: (_) async => bytes,
-      ).timeout(const Duration(seconds: 20)).catchError((error) {
-        debugPrint('Document print dialog failed: $error');
-        return false;
-      }),
-    );
-    if (context.mounted) {
-      Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  Future<void> _printFile() async {
+    if (_busy) return;
+    final filePath = file.path ?? '';
+    if (filePath.isEmpty || !File(filePath).existsSync()) {
+      AppSnack.show(context, t(context, 'file_not_found'));
+      return;
+    }
+    final extension = _extensionOf(file.name);
+    if (extension != 'PDF') {
+      AppSnack.show(context, t(context, 'only_pdf'));
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final bytes = await File(filePath).readAsBytes();
+      final saved = await _copyToDownloads();
+      if (saved != null) {
+        await HistoryDB.instance.insertHistory(
+          PrintHistory(
+            title: file.name,
+            type: 'pdf',
+            filePath: saved.path,
+            createdAt: DateTime.now().toIso8601String(),
+          ),
+        );
+      }
+      if (!mounted) return;
+      await openPrintLayout(name: file.name, bytes: bytes);
+    } catch (error) {
+      debugPrint('Document print failed: $error');
+      if (mounted) AppSnack.show(context, t(context, 'could_not_print_file'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -95,7 +115,10 @@ class DocPreScreen extends StatelessWidget {
     final isPdf = extension == 'PDF';
     final canRead = filePath.isNotEmpty && File(filePath).existsSync();
 
-    return Scaffold(
+    return AppBusyOverlay(
+      busy: _busy,
+      message: t(context, 'please_wait'),
+      child: Scaffold(
       backgroundColor: const Color(0xFFF4F7FB),
       appBar: AppBar(
         elevation: 0,
@@ -110,14 +133,17 @@ class DocPreScreen extends StatelessWidget {
           ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'Document Preview',
+        title: Text(
+          isPdf ? t(context, 'pdf_preview_title') : t(context, 'document_preview'),
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
             color: Color(0xFF2B3A55),
           ),
         ),
+        actions: const [
+          ProAppBarButton(),
+        ],
       ),
       body: Column(
         children: [
@@ -144,11 +170,12 @@ class DocPreScreen extends StatelessWidget {
             ),
           ),
           _BottomActions(
-            onPrint: () => _printFile(context),
-            onSave: () => _saveFile(context),
+            onPrint: _busy ? null : afterInterstitial(_printFile),
+            onSave: _busy ? null : afterInterstitial(_saveFile),
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -166,22 +193,18 @@ class _PreviewHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = isPdf ? 'PDF Preview' : 'Document Preview';
+    final label = isPdf ? t(context, 'pdf_preview_title') : t(context, 'document_preview');
     return Row(
       children: [
         Container(
           height: 40,
           width: 40,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF2F80ED), Color(0xFF56CCF2)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            gradient: AppTheme.gradientBackground,
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF2F80ED).withOpacity(0.25),
+                color: AppTheme.actionColor.withOpacity(0.25),
                 blurRadius: 10,
                 offset: const Offset(0, 6),
               ),
@@ -268,7 +291,7 @@ class _PreviewCard extends StatelessWidget {
             child: const Icon(
               Icons.insert_drive_file_rounded,
               size: 52,
-              color: Color(0xFF2F80ED),
+              color: AppTheme.actionColor,
             ),
           ),
           const SizedBox(height: 16),
@@ -296,8 +319,8 @@ class _PreviewCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             hasPreview
-                ? 'Preview ready'
-                : 'Preview not available for this file',
+                ? t(context, 'preview_ready')
+                : t(context, 'preview_unavailable'),
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
@@ -359,6 +382,7 @@ class _PdfPreviewState extends State<_PdfPreview> {
           child: PdfViewPinch(
             controller: _controller,
             scrollDirection: Axis.vertical,
+            builders: appPdfPinchBuilders(),
           ),
         ),
       ),
@@ -369,8 +393,8 @@ class _PdfPreviewState extends State<_PdfPreview> {
 class _BottomActions extends StatelessWidget {
   const _BottomActions({required this.onPrint, required this.onSave});
 
-  final VoidCallback onPrint;
-  final VoidCallback onSave;
+  final VoidCallback? onPrint;
+  final VoidCallback? onSave;
 
   @override
   Widget build(BuildContext context) {
@@ -394,8 +418,8 @@ class _BottomActions extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: onSave,
                 icon: const Icon(Icons.save_rounded, size: 20),
-                label: const Text(
-                  'Save',
+                label: Text(
+                  t(context, 'save'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -413,12 +437,12 @@ class _BottomActions extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: onPrint,
                 icon: const Icon(Icons.print_rounded, size: 20),
-                label: const Text(
-                  'Print',
+                label: Text(
+                  t(context, 'print'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2F80ED),
+                  backgroundColor: AppTheme.actionColor,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(vertical: 14),

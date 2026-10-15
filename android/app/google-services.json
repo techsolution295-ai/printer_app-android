@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "160907515145",
+    "project_id": "printer-android-sparkshell",
+    "storage_bucket": "printer-android-sparkshell.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:160907515145:android:30c78a2775ccb583e5afd8",
+        "android_client_info": {
+          "package_name": "com.smart.printer.mobile.print.photos.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD7_3UAJc6l2sBAb3fi1_g9lGzbWWVYGX0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

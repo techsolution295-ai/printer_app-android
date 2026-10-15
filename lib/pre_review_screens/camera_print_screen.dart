@@ -1,22 +1,34 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:smart_printer/config/pro_theme.dart';
+import '../l10n/labels.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
+import '../ads/ad_service.dart';
 import '../database/data-base.dart';
 import '../models/print_history_model.dart';
+import '../widgets/app_loader.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/pro_crown_icon.dart';
 
-class CameraPrintScreen extends StatelessWidget {
+class CameraPrintScreen extends StatefulWidget {
   const CameraPrintScreen({super.key, required this.image});
 
   final XFile image;
+
+  @override
+  State<CameraPrintScreen> createState() => _CameraPrintScreenState();
+}
+
+class _CameraPrintScreenState extends State<CameraPrintScreen> {
+  bool _busy = false;
+
+  XFile get image => widget.image;
 
   Future<Directory> _getSaveDir() async {
     if (Platform.isAndroid) {
@@ -43,12 +55,14 @@ class CameraPrintScreen extends StatelessWidget {
     return doc.save();
   }
 
-  Future<void> _saveImage(BuildContext context) async {
+  Future<void> _saveImage() async {
+    if (_busy) return;
     final file = File(image.path);
     if (!file.existsSync()) {
-      AppSnack.show(context, 'Image not found.');
+      AppSnack.show(context, t(context, 'image_not_found'));
       return;
     }
+    setState(() => _busy = true);
     try {
       final dir = await _getSaveDir();
       await dir.create(recursive: true);
@@ -68,20 +82,24 @@ class CameraPrintScreen extends StatelessWidget {
           pages: 1,
         ),
       );
-      if (!context.mounted) return;
-      AppSnack.show(context, 'Saved to Files');
+      if (!mounted) return;
+      AppSnack.show(context, t(context, 'saved_to_files'));
     } catch (error) {
       debugPrint('Camera save failed: $error');
-      if (context.mounted) AppSnack.show(context, 'Could not save image: $error');
+      if (mounted) AppSnack.show(context, t(context, 'could_not_save_image'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _printImage(BuildContext context) async {
+  Future<void> _printImage() async {
+    if (_busy) return;
     final file = File(image.path);
     if (!file.existsSync()) {
-      AppSnack.show(context, 'Image not found.');
+      AppSnack.show(context, t(context, 'image_not_found'));
       return;
     }
+    setState(() => _busy = true);
     try {
       final bytes = await _buildPdfFromImage(file);
       if (bytes.isEmpty) {
@@ -102,18 +120,13 @@ class CameraPrintScreen extends StatelessWidget {
           pages: 1,
         ),
       );
-      unawaited(
-        Printing.layoutPdf(
-          name: 'camera_print.pdf',
-          onLayout: (_) async => bytes,
-        ).timeout(const Duration(seconds: 20)).catchError((error) {
-          debugPrint('Camera print dialog failed: $error');
-          return false;
-        }),
-      );
+      if (!mounted) return;
+      await openPrintLayout(name: 'camera_print.pdf', bytes: bytes);
     } catch (error) {
       debugPrint('Camera print failed: $error');
-      if (context.mounted) AppSnack.show(context, 'Could not print image: $error');
+      if (mounted) AppSnack.show(context, t(context, 'could_not_print_image'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -121,7 +134,10 @@ class CameraPrintScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final file = File(image.path);
 
-    return Scaffold(
+    return AppBusyOverlay(
+      busy: _busy,
+      message: t(context, 'please_wait'),
+      child: Scaffold(
       backgroundColor: const Color(0xFFF4F7FB),
       appBar: AppBar(
         elevation: 0,
@@ -136,14 +152,17 @@ class CameraPrintScreen extends StatelessWidget {
           ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'Camera Print',
+        title: Text(
+          t(context, 'camera_print'),
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
             color: Color(0xFF2B3A55),
           ),
         ),
+        actions: const [
+          ProAppBarButton(),
+        ],
       ),
       body: Column(
         children: [
@@ -166,9 +185,9 @@ class CameraPrintScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(22),
                   child: file.existsSync()
                       ? Image.file(file, fit: BoxFit.contain)
-                      : const Center(
+                      : Center(
                           child: Text(
-                            'Image not found',
+                            t(context, 'image_not_found'),
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -181,11 +200,12 @@ class CameraPrintScreen extends StatelessWidget {
             ),
           ),
           _BottomActions(
-            onPrint: () => _printImage(context),
-            onSave: () => _saveImage(context),
+            onPrint: _busy ? null : afterInterstitial(_printImage),
+            onSave: _busy ? null : afterInterstitial(_saveImage),
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -193,8 +213,8 @@ class CameraPrintScreen extends StatelessWidget {
 class _BottomActions extends StatelessWidget {
   const _BottomActions({required this.onPrint, required this.onSave});
 
-  final VoidCallback onPrint;
-  final VoidCallback onSave;
+  final VoidCallback? onPrint;
+  final VoidCallback? onSave;
 
   @override
   Widget build(BuildContext context) {
@@ -218,8 +238,8 @@ class _BottomActions extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: onSave,
                 icon: const Icon(Icons.save_rounded, size: 20),
-                label: const Text(
-                  'Save',
+                label: Text(
+                  t(context, 'save'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -237,12 +257,12 @@ class _BottomActions extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: onPrint,
                 icon: const Icon(Icons.print_rounded, size: 20),
-                label: const Text(
-                  'Print',
+                label: Text(
+                  t(context, 'print'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2F80ED),
+                  backgroundColor: AppTheme.actionColor,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(vertical: 14),

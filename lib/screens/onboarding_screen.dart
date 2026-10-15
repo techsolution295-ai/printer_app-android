@@ -19,7 +19,7 @@
 //       image: 'assets/images/printer.png',
 //       bgStart: Color(0xFFEAF2FF),
 //       bgEnd: Color(0xFFBFDDF7),
-//       accent: Color(0xFF2F80ED),
+//       accent: AppTheme.actionColor,
 //     ),
 //     _OnboardingPage(
 //       title: 'Scan & Save',
@@ -199,7 +199,7 @@
 //                       ),
 //                     ),
 //                     const SizedBox(height: 6),
-//                     const Text(
+//                     Text(
 //                       'You can change this anytime in Settings',
 //                       style: TextStyle(
 //                         fontSize: 11.5,

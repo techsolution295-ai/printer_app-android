@@ -1,17 +1,19 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import '../l10n/labels.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
+import '../ads/ad_service.dart';
 import '../database/data-base.dart';
 import '../models/print_history_model.dart';
+import '../widgets/app_loader.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/pro_crown_icon.dart';
 
 class PhotoPreScreen extends StatefulWidget {
   const PhotoPreScreen({super.key, required this.images});
@@ -66,7 +68,7 @@ class _PhotoPreScreenState extends State<PhotoPreScreen> {
     if (_busy) return;
     final images = widget.images;
     if (images.isEmpty) {
-      _show('No images found.');
+      _show(t(context, 'no_images'));
       return;
     }
     setState(() => _busy = true);
@@ -94,10 +96,10 @@ class _PhotoPreScreenState extends State<PhotoPreScreen> {
         ),
       );
       if (!mounted) return;
-      _show('Saved to Files');
+      _show(t(context, 'saved_to_files'));
     } catch (error) {
       debugPrint('Photo save failed: $error');
-      if (mounted) _show('Could not save images: $error');
+      if (mounted) _show(t(context, 'could_not_save_images', namedArgs: {'error': '$error'}));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -107,7 +109,7 @@ class _PhotoPreScreenState extends State<PhotoPreScreen> {
     if (_busy) return;
     final images = widget.images;
     if (images.isEmpty) {
-      _show('No images found.');
+      _show(t(context, 'no_images'));
       return;
     }
     setState(() => _busy = true);
@@ -131,19 +133,12 @@ class _PhotoPreScreenState extends State<PhotoPreScreen> {
           pages: images.length,
         ),
       );
-      unawaited(
-        Printing.layoutPdf(
-          name: 'photos.pdf',
-          onLayout: (_) async => bytes,
-        ).timeout(const Duration(seconds: 20)).catchError((error) {
-          debugPrint('Photo print dialog failed: $error');
-          return false;
-        }),
-      );
+      if (!mounted) return;
+      await openPrintLayout(name: 'photos.pdf', bytes: bytes);
       if (!mounted) return;
     } catch (error) {
       debugPrint('Photo print failed: $error');
-      if (mounted) _show('Could not print images: $error');
+      if (mounted) _show(t(context, 'could_not_print_images', namedArgs: {'error': '$error'}));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -160,7 +155,10 @@ class _PhotoPreScreenState extends State<PhotoPreScreen> {
     final file = File(current.path);
     final fileSize = _formatBytes(file.existsSync() ? file.lengthSync() : 0);
 
-    return Scaffold(
+    return AppBusyOverlay(
+      busy: _busy,
+      message: t(context, 'please_wait'),
+      child: Scaffold(
       backgroundColor: const Color(0xFFF4F7FB),
       appBar: AppBar(
         elevation: 0,
@@ -175,14 +173,17 @@ class _PhotoPreScreenState extends State<PhotoPreScreen> {
           ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'Photo Preview',
+        title: Text(
+          t(context, 'photo_preview'),
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
             color: Color(0xFF2B3A55),
           ),
         ),
+        actions: const [
+          ProAppBarButton(),
+        ],
       ),
       body: Column(
         children: [
@@ -220,11 +221,12 @@ class _PhotoPreScreenState extends State<PhotoPreScreen> {
               ),
             ),
           _BottomActions(
-            onPrint: _busy ? null : _printImages,
-            onSave: _busy ? null : _saveImages,
+            onPrint: _busy ? null : afterInterstitial(_printImages),
+            onSave: _busy ? null : afterInterstitial(_saveImages),
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -273,8 +275,8 @@ class _PreviewHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Photo Preview',
+              Text(
+                t(context, 'photo_preview'),
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
@@ -336,9 +338,9 @@ class _PhotoPager extends StatelessWidget {
                     file,
                     fit: BoxFit.contain,
                   )
-                : const Center(
+                : Center(
                     child: Text(
-                      'Image not found',
+                      t(context, 'image_not_found'),
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -430,8 +432,8 @@ class _BottomActions extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: onSave,
                 icon: const Icon(Icons.save_rounded, size: 20),
-                label: const Text(
-                  'Save',
+                label: Text(
+                  t(context, 'save'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -449,8 +451,8 @@ class _BottomActions extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: onPrint,
                 icon: const Icon(Icons.print_rounded, size: 20),
-                label: const Text(
-                  'Print',
+                label: Text(
+                  t(context, 'print'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: ElevatedButton.styleFrom(

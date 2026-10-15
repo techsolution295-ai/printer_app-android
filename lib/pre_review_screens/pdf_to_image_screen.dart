@@ -3,15 +3,19 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:smart_printer/config/pro_theme.dart';
+import '../l10n/labels.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdfx/pdfx.dart' as pdfx;
-import 'package:printing/printing.dart';
 
+import '../ads/ad_service.dart';
 import '../database/data-base.dart';
 import '../models/print_history_model.dart';
+import '../widgets/app_loader.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/pro_crown_icon.dart';
 
 class PdfToImageScreen extends StatefulWidget {
   const PdfToImageScreen({super.key, required this.pdfPath});
@@ -38,14 +42,21 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
   }
 
   Future<void> _load() async {
-    final doc = await pdfx.PdfDocument.openFile(widget.pdfPath);
-    _document = doc;
-    _pageCount = doc.pagesCount;
-    _selected
-      ..clear()
-      ..addAll(List<bool>.filled(_pageCount, true));
-    if (!mounted) return;
-    setState(() => _loading = false);
+    try {
+      final doc = await pdfx.PdfDocument.openFile(widget.pdfPath);
+      _document = doc;
+      _pageCount = doc.pagesCount;
+      _selected
+        ..clear()
+        ..addAll(List<bool>.filled(_pageCount, true));
+      if (!mounted) return;
+      setState(() => _loading = false);
+    } catch (error) {
+      debugPrint('PDF to image load failed: $error');
+      if (!mounted) return;
+      setState(() => _loading = false);
+      AppSnack.show(context, t(context, 'could_not_open_pdf'));
+    }
   }
 
   @override
@@ -142,7 +153,7 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
   Future<void> _saveImages() async {
     final pages = await _selectedPages();
     if (pages.isEmpty) {
-      _show('Select at least one page.');
+      _show(t(context, 'select_one_page'));
       return;
     }
     setState(() => _busy = true);
@@ -174,10 +185,10 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
         ),
       );
       if (!mounted) return;
-      _show('Saved to Files');
+      _show(t(context, 'saved_to_files'));
     } catch (error) {
       debugPrint('PDF to Image save failed: $error');
-      if (mounted) _show('Could not save images: $error');
+      if (mounted) _show(t(context, 'could_not_save_images', namedArgs: {'error': '$error'}));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -186,7 +197,7 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
   Future<void> _printImages() async {
     final pages = await _selectedPages();
     if (pages.isEmpty) {
-      _show('Select at least one page.');
+      _show(t(context, 'select_one_page'));
       return;
     }
     setState(() => _busy = true);
@@ -217,19 +228,12 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
           pages: images.length,
         ),
       );
-      unawaited(
-        Printing.layoutPdf(
-          name: 'pdf_to_image.pdf',
-          onLayout: (_) async => bytes,
-        ).timeout(const Duration(seconds: 20)).catchError((error) {
-          debugPrint('PDF to Image print dialog failed: $error');
-          return false;
-        }),
-      );
+      if (!mounted) return;
+      await openPrintLayout(name: 'pdf_to_image.pdf', bytes: bytes);
       if (!mounted) return;
     } catch (error) {
       debugPrint('PDF to Image print failed: $error');
-      if (mounted) _show('Could not print PDF: $error');
+      if (mounted) _show(t(context, 'could_not_print_pdf', namedArgs: {'error': '$error'}));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -247,7 +251,10 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppBusyOverlay(
+      busy: _busy,
+      message: t(context, 'please_wait'),
+      child: Scaffold(
       backgroundColor: Colors.white,
       body: Column(
         children: [
@@ -273,8 +280,8 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
                             onPressed: () => Navigator.pop(context),
                           ),
                         ),
-                        const Text(
-                          'PDF to Image',
+                        Text(
+                          t(context, 'feat_pdf_to_image'),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -282,6 +289,10 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF2B3A55),
                           ),
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: const ProAppBarButton(),
                         ),
                       ],
                     ),
@@ -293,8 +304,8 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
                         child: TextButton(
                           onPressed: _selected.where((v) => v).isEmpty
                               ? null
-                              : _saveImages,
-                          child: const Text('Save'),
+                              : afterInterstitial(_saveImages),
+                          child: Text(t(context, 'save')),
                         ),
                       ),
                       Expanded(
@@ -302,7 +313,7 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
                           onPressed: _selected.contains(false)
                               ? () => _toggleAll(true)
                               : null,
-                          child: const Text('All'),
+                          child: Text(t(context, 'all')),
                         ),
                       ),
                       Expanded(
@@ -310,7 +321,7 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
                           onPressed: _selected.contains(true)
                               ? () => _toggleAll(false)
                               : null,
-                          child: const Text('Clear'),
+                          child: Text(t(context, 'clear')),
                         ),
                       ),
                     ],
@@ -324,7 +335,7 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
             child: Row(
               children: [
                 Text(
-                  'Pages: $_pageCount',
+                  t(context, 'pages_count', namedArgs: {'count': '$_pageCount'}),
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     color: Colors.black87,
@@ -332,7 +343,9 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
                 ),
                 const Spacer(),
                 Text(
-                  'Selected: ${_selected.where((v) => v).length}',
+                  t(context, 'selected_count', namedArgs: {
+                    'count': '${_selected.where((v) => v).length}',
+                  }),
                   style: const TextStyle(color: Colors.black54),
                 ),
               ],
@@ -340,7 +353,7 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
           ),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? AppLoader(message: t(context, 'loading_pages'))
                 : GridView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                     gridDelegate:
@@ -412,7 +425,7 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Page $pageNumber',
+                                t(context, 'page_n', namedArgs: {'n': '$pageNumber'}),
                                 style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
@@ -442,7 +455,7 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: _busy ? null : _printImages,
+                  onPressed: _busy ? null : afterInterstitial(_printImages),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2F8CFF),
                     shape: RoundedRectangleBorder(
@@ -450,7 +463,7 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
                     ),
                   ),
                   child: Text(
-                    _busy ? 'Working...' : 'Print Selected',
+                    _busy ? t(context, 'working') : t(context, 'print_selected'),
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w600,
@@ -462,6 +475,7 @@ class _PdfToImageScreenState extends State<PdfToImageScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -498,14 +512,17 @@ class _HeaderCard extends StatelessWidget {
             ),
             child: const Icon(
               Icons.image_rounded,
-              color: Color(0xFF2F80ED),
+              color: AppTheme.actionColor,
               size: 18,
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Pages $count • Selected $selected',
+              t(context, 'pages_selected', namedArgs: {
+                'count': '$count',
+                'selected': '$selected',
+              }),
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
@@ -541,7 +558,7 @@ class _PageCard extends StatelessWidget {
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: selected ? const Color(0xFF2F80ED) : Colors.transparent,
+            color: selected ? AppTheme.actionColor : Colors.transparent,
             width: 2,
           ),
           boxShadow: [
@@ -567,7 +584,7 @@ class _PageCard extends StatelessWidget {
               child: Row(
                 children: [
                   Text(
-                    'Page $pageNumber',
+                    t(context, 'page_n', namedArgs: {'n': '$pageNumber'}),
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -580,7 +597,7 @@ class _PageCard extends StatelessWidget {
                         ? Icons.check_circle_rounded
                         : Icons.circle_outlined,
                     color: selected
-                        ? const Color(0xFF2F80ED)
+                        ? AppTheme.actionColor
                         : const Color(0xFFCBD5E1),
                     size: 18,
                   ),
@@ -623,7 +640,7 @@ class _PdfThumb extends StatelessWidget {
             child: Center(
               child: Icon(
                 Icons.picture_as_pdf_rounded,
-                color: Color(0xFF2F80ED),
+                color: AppTheme.actionColor,
                 size: 18,
               ),
             ),
@@ -668,8 +685,8 @@ class _BottomActions extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: busy ? null : onSave,
                 icon: const Icon(Icons.save_rounded, size: 20),
-                label: const Text(
-                  'Save',
+                label: Text(
+                  t(context, 'save'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -688,11 +705,11 @@ class _BottomActions extends StatelessWidget {
                 onPressed: busy ? null : onPrint,
                 icon: const Icon(Icons.print_rounded, size: 20),
                 label: Text(
-                  busy ? 'Working...' : 'Print',
+                  busy ? t(context, 'working') : t(context, 'print'),
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2F80ED),
+                  backgroundColor: AppTheme.actionColor,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(vertical: 14),

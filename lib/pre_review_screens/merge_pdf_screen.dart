@@ -3,14 +3,18 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:smart_printer/config/pro_theme.dart';
+import '../l10n/labels.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdfx/pdfx.dart' as pdfx;
-import 'package:printing/printing.dart';
 
+import '../ads/ad_service.dart';
 import '../database/data-base.dart';
 import '../models/print_history_model.dart';
+import '../widgets/app_loader.dart';
+import '../widgets/pro_crown_icon.dart';
 import '../widgets/app_snack.dart';
 
 class MergePdfScreen extends StatefulWidget {
@@ -39,25 +43,32 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
   Future<void> _load() async {
     final items = <_PdfItem>[];
     final pages = <_PdfPageItem>[];
-    for (final path in widget.pdfPaths) {
-      final doc = await pdfx.PdfDocument.openFile(path);
-      final count = doc.pagesCount;
-      await doc.close();
-      items.add(_PdfItem(path: path, pages: count));
-      for (int i = 1; i <= count; i++) {
-        pages.add(_PdfPageItem(path: path, pageNumber: i));
+    try {
+      for (final path in widget.pdfPaths) {
+        final doc = await pdfx.PdfDocument.openFile(path);
+        final count = doc.pagesCount;
+        await doc.close();
+        items.add(_PdfItem(path: path, pages: count));
+        for (int i = 1; i <= count; i++) {
+          pages.add(_PdfPageItem(path: path, pageNumber: i));
+        }
       }
+      if (!mounted) return;
+      setState(() {
+        _items
+          ..clear()
+          ..addAll(items);
+        _pages
+          ..clear()
+          ..addAll(pages);
+        _loading = false;
+      });
+    } catch (error) {
+      debugPrint('Merge PDF load failed: $error');
+      if (!mounted) return;
+      setState(() => _loading = false);
+      AppSnack.show(context, t(context, 'could_not_open_pdfs'));
     }
-    if (!mounted) return;
-    setState(() {
-      _items
-        ..clear()
-        ..addAll(items);
-      _pages
-        ..clear()
-        ..addAll(pages);
-      _loading = false;
-    });
   }
 
   Future<pdfx.PdfPageImage?> _getPageThumb(String path, int pageNumber) {
@@ -163,10 +174,10 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
         ),
       );
       if (!mounted) return;
-      _show('Saved to Files');
+      _show(t(context, 'saved_to_files'));
     } catch (error) {
       debugPrint('Merge PDF save failed: $error');
-      if (mounted) _show('Could not save PDF: $error');
+      if (mounted) _show(t(context, 'could_not_save_pdf', namedArgs: {'error': '$error'}));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -199,19 +210,12 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
           createdAt: DateTime.now().toIso8601String(),
         ),
       );
-      unawaited(
-        Printing.layoutPdf(
-          name: 'merge_pdf.pdf',
-          onLayout: (_) async => bytes,
-        ).timeout(const Duration(seconds: 20)).catchError((error) {
-          debugPrint('Merge PDF print dialog failed: $error');
-          return false;
-        }),
-      );
+      if (!mounted) return;
+      await openPrintLayout(name: 'merge_pdf.pdf', bytes: bytes);
       if (!mounted) return;
     } catch (error) {
       debugPrint('Merge PDF print failed: $error');
-      if (mounted) _show('Could not print PDF: $error');
+      if (mounted) _show(t(context, 'could_not_print_pdf', namedArgs: {'error': '$error'}));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -223,7 +227,10 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppBusyOverlay(
+      busy: _busy,
+      message: t(context, 'please_wait'),
+      child: Scaffold(
       backgroundColor: const Color(0xFFF4F7FB),
       appBar: AppBar(
         elevation: 0,
@@ -238,14 +245,17 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
           ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'Merge PDF',
+        title: Text(
+          t(context, 'feat_merge'),
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
             color: Color(0xFF2B3A55),
           ),
         ),
+        actions: const [
+          ProAppBarButton(),
+        ],
       ),
       body: Column(
         children: [
@@ -254,7 +264,7 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
             child: Row(
               children: [
                 Text(
-                  'Files: ${_items.length}',
+                  t(context, 'files_count', namedArgs: {'count': '${_items.length}'}),
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     color: Colors.black87,
@@ -262,7 +272,7 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
                 ),
                 const Spacer(),
                 Text(
-                  'Pages: ${_pages.length}',
+                  t(context, 'pages_count', namedArgs: {'count': '${_pages.length}'}),
                   style: const TextStyle(color: Colors.black54),
                 ),
               ],
@@ -270,7 +280,7 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
           ),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? AppLoader(message: t(context, 'loading_pages'))
                 : GridView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                     itemCount: _pages.length,
@@ -297,11 +307,12 @@ class _MergePdfScreenState extends State<MergePdfScreen> {
           ),
           _BottomActions(
             busy: _busy,
-            onSave: _saveMerged,
-            onPrint: _printMerged,
+            onSave: afterInterstitial(_saveMerged),
+            onPrint: afterInterstitial(_printMerged),
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -361,7 +372,7 @@ class _PdfPageTile extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Page $pageIndex',
+            t(context, 'page_n', namedArgs: {'n': '$pageIndex'}),
             style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
@@ -437,8 +448,8 @@ class _BottomActions extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: busy ? null : onSave,
                 icon: const Icon(Icons.save_rounded, size: 20),
-                label: const Text(
-                  'Save',
+                label: Text(
+                  t(context, 'save'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -457,11 +468,11 @@ class _BottomActions extends StatelessWidget {
                 onPressed: busy ? null : onPrint,
                 icon: const Icon(Icons.print_rounded, size: 20),
                 label: Text(
-                  busy ? 'Working...' : 'Print',
+                  busy ? t(context, 'working') : t(context, 'print'),
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2F80ED),
+                  backgroundColor: AppTheme.actionColor,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(vertical: 14),

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:smart_printer/config/pro_theme.dart';
+import '../l10n/labels.dart';
 
 import 'files_screen.dart';
 import 'web_page.dart';
@@ -8,139 +10,171 @@ class LearnMoreScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final width = media.size.width;
+    final textScale = media.textScaler.scale(1);
+    final compact = width < 360 || textScale > 1.12;
+    final stackButtons = width < 390 || textScale > 1.2;
+    final pad = width < 340 ? 12.0 : 16.0;
+    final gap = compact ? 10.0 : 14.0;
+
+    final webButton = ElevatedButton(
+      onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const WebPageScreen()),
+        );
+      },
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppTheme.actionColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        padding: EdgeInsets.symmetric(vertical: compact ? 12 : 14, horizontal: 10),
+      ),
+      child: Text(
+        t(context, 'open_web_print'),
+        textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: compact ? 13 : 14,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+          height: 1.2,
+        ),
+      ),
+    );
+
+    final filesButton = OutlinedButton(
+      onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const FilesScreen()),
+        );
+      },
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppTheme.actionColor,
+        side: const BorderSide(color: AppTheme.actionColor),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        padding: EdgeInsets.symmetric(vertical: compact ? 12 : 14, horizontal: 10),
+      ),
+      child: Text(
+        t(context, 'view_files'),
+        textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: compact ? 13 : 14,
+          fontWeight: FontWeight.w700,
+          height: 1.2,
+        ),
+      ),
+    );
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB),
+      backgroundColor: AppTheme.pageBackground,
       appBar: AppBar(
-        title: const Text('Learn More'),
+        title: Text(
+          t(context, 'learn_more'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        foregroundColor: AppTheme.textDark,
         elevation: 0,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        child: Column(
-          children: [
-            _HeroCard(
-              title: 'Print smarter in minutes',
-              subtitle:
-                  'Pick a file, preview the layout, and send it to your printer.',
-            ),
-            const SizedBox(height: 14),
-            _SectionCard(
-              title: 'How it works',
-              child: Column(
-                children: const [
-                  _StepItem(
-                    number: '1',
-                    title: 'Choose a file',
-                    subtitle:
-                        'Select documents, photos, PDFs, or scan from camera.',
-                  ),
-                  SizedBox(height: 10),
-                  _StepItem(
-                    number: '2',
-                    title: 'Review & edit',
-                    subtitle:
-                        'Adjust layout, split pages, or merge multiple PDFs.',
-                  ),
-                  SizedBox(height: 10),
-                  _StepItem(
-                    number: '3',
-                    title: 'Print with confidence',
-                    subtitle: 'Preview the output and start printing.',
-                  ),
-                ],
+      body: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(pad, compact ? 10 : 16, pad, 24),
+          child: Column(
+            children: [
+              _HeroCard(
+                title: t(context, 'learn_title'),
+                subtitle: t(context, 'learn_sub'),
+                compact: compact,
               ),
-            ),
-            const SizedBox(height: 14),
-            _SectionCard(
-              title: 'Popular features',
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: const [
-                  _FeaturePill(icon: Icons.text_fields_rounded, label: 'Smart'),
-                  _FeaturePill(icon: Icons.photo_rounded, label: 'Photos'),
-                  _FeaturePill(icon: Icons.picture_as_pdf_rounded, label: 'PDF'),
-                  _FeaturePill(icon: Icons.call_split_rounded, label: 'Split'),
-                  _FeaturePill(icon: Icons.merge_type_rounded, label: 'Merge'),
-                  _FeaturePill(icon: Icons.document_scanner_rounded, label: 'Scan'),
-                  _FeaturePill(icon: Icons.public_rounded, label: 'Web Print'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            _SectionCard(
-              title: 'Quick tips',
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  _TipItem(text: 'Use Page Layout for posters or collages.'),
-                  SizedBox(height: 8),
-                  _TipItem(text: 'Convert PDF to images for easy editing.'),
-                  SizedBox(height: 8),
-                  _TipItem(text: 'Save prints in Files for fast reprints.'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const WebPageScreen(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2F80ED),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+              SizedBox(height: gap),
+              _SectionCard(
+                title: t(context, 'how_it_works'),
+                compact: compact,
+                child: Column(
+                  children: [
+                    _StepItem(
+                      number: '1',
+                      title: t(context, 'step_choose'),
+                      subtitle: t(context, 'step_choose_sub'),
+                      compact: compact,
                     ),
-                    child: const Text(
-                      'Open Web Print',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
+                    SizedBox(height: compact ? 8 : 10),
+                    _StepItem(
+                      number: '2',
+                      title: t(context, 'step_review'),
+                      subtitle: t(context, 'step_review_sub'),
+                      compact: compact,
                     ),
-                  ),
+                    SizedBox(height: compact ? 8 : 10),
+                    _StepItem(
+                      number: '3',
+                      title: t(context, 'step_print'),
+                      subtitle: t(context, 'step_print_sub'),
+                      compact: compact,
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const FilesScreen(),
-                        ),
-                      );
-                    },
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF2F80ED),
-                      side: const BorderSide(color: Color(0xFF2F80ED)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    child: const Text(
-                      'View Files',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-                    ),
-                  ),
+              ),
+              SizedBox(height: gap),
+              _SectionCard(
+                title: t(context, 'popular_features'),
+                compact: compact,
+                child: Wrap(
+                  spacing: compact ? 8 : 10,
+                  runSpacing: compact ? 8 : 10,
+                  children: [
+                    _FeaturePill(icon: Icons.text_fields_rounded, label: t(context, 'pill_smart')),
+                    _FeaturePill(icon: Icons.photo_rounded, label: t(context, 'pill_photos')),
+                    _FeaturePill(icon: Icons.picture_as_pdf_rounded, label: t(context, 'pill_pdf')),
+                    _FeaturePill(icon: Icons.call_split_rounded, label: t(context, 'pill_split')),
+                    _FeaturePill(icon: Icons.merge_type_rounded, label: t(context, 'pill_merge')),
+                    _FeaturePill(icon: Icons.document_scanner_rounded, label: t(context, 'scan')),
+                    _FeaturePill(icon: Icons.public_rounded, label: t(context, 'feat_web')),
+                  ],
                 ),
-              ],
-            ),
-          ],
+              ),
+              SizedBox(height: gap),
+              _SectionCard(
+                title: t(context, 'quick_tips'),
+                compact: compact,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _TipItem(text: t(context, 'tip_layout')),
+                    const SizedBox(height: 8),
+                    _TipItem(text: t(context, 'tip_pdf_images')),
+                    const SizedBox(height: 8),
+                    _TipItem(text: t(context, 'tip_save_files')),
+                  ],
+                ),
+              ),
+              SizedBox(height: compact ? 12 : 16),
+              if (stackButtons)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    webButton,
+                    const SizedBox(height: 10),
+                    filesButton,
+                  ],
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(child: webButton),
+                    const SizedBox(width: 12),
+                    Expanded(child: filesButton),
+                  ],
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -148,22 +182,24 @@ class LearnMoreScreen extends StatelessWidget {
 }
 
 class _HeroCard extends StatelessWidget {
-  const _HeroCard({required this.title, required this.subtitle});
+  const _HeroCard({
+    required this.title,
+    required this.subtitle,
+    required this.compact,
+  });
 
   final String title;
   final String subtitle;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    final titleSize = (MediaQuery.sizeOf(context).width * 0.05).clamp(16.0, 20.0);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      padding: EdgeInsets.all(compact ? 14 : 16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF4D6FA6), Color(0xFF344C73)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        gradient: AppTheme.gradientBackground,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -171,19 +207,21 @@ class _HeroCard extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 18,
+            style: TextStyle(
+              fontSize: titleSize,
               fontWeight: FontWeight.w800,
               color: Colors.white,
+              height: 1.2,
             ),
           ),
           const SizedBox(height: 6),
           Text(
             subtitle,
-            style: const TextStyle(
-              fontSize: 12,
+            style: TextStyle(
+              fontSize: compact ? 12 : 13,
               fontWeight: FontWeight.w500,
               color: Colors.white70,
+              height: 1.35,
             ),
           ),
         ],
@@ -193,16 +231,21 @@ class _HeroCard extends StatelessWidget {
 }
 
 class _SectionCard extends StatelessWidget {
-  const _SectionCard({required this.title, required this.child});
+  const _SectionCard({
+    required this.title,
+    required this.child,
+    required this.compact,
+  });
 
   final String title;
   final Widget child;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      padding: EdgeInsets.fromLTRB(compact ? 12 : 16, 14, compact ? 12 : 16, 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -219,10 +262,11 @@ class _SectionCard extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 14,
+            style: TextStyle(
+              fontSize: compact ? 13 : 15,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF2B3A55),
+              color: AppTheme.textDark,
+              height: 1.2,
             ),
           ),
           const SizedBox(height: 10),
@@ -238,11 +282,13 @@ class _StepItem extends StatelessWidget {
     required this.number,
     required this.title,
     required this.subtitle,
+    required this.compact,
   });
 
   final String number;
   final String title;
   final String subtitle;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -260,7 +306,7 @@ class _StepItem extends StatelessWidget {
           child: Text(
             number,
             style: const TextStyle(
-              color: Color(0xFF2F80ED),
+              color: AppTheme.actionColor,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -272,19 +318,21 @@ class _StepItem extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: const TextStyle(
-                  fontSize: 13,
+                style: TextStyle(
+                  fontSize: compact ? 13 : 14,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF2B3A55),
+                  color: AppTheme.textDark,
+                  height: 1.25,
                 ),
               ),
               const SizedBox(height: 3),
               Text(
                 subtitle,
-                style: const TextStyle(
-                  fontSize: 12,
+                style: TextStyle(
+                  fontSize: compact ? 12 : 13,
                   fontWeight: FontWeight.w500,
-                  color: Color(0xFF6B7A96),
+                  color: AppTheme.textLight,
+                  height: 1.35,
                 ),
               ),
             ],
@@ -303,26 +351,35 @@ class _FeaturePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEAF2FF),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: const Color(0xFF2F80ED)),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF2B3A55),
+    final maxWidth = MediaQuery.sizeOf(context).width - 56;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppTheme.tintColor,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: AppTheme.actionColor),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textDark,
+                  height: 1.2,
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -343,7 +400,7 @@ class _TipItem extends StatelessWidget {
           width: 6,
           margin: const EdgeInsets.only(top: 6),
           decoration: const BoxDecoration(
-            color: Color(0xFF2F80ED),
+            color: AppTheme.actionColor,
             shape: BoxShape.circle,
           ),
         ),
@@ -352,9 +409,10 @@ class _TipItem extends StatelessWidget {
           child: Text(
             text,
             style: const TextStyle(
-              fontSize: 12,
+              fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF546585),
+              color: AppTheme.textLight,
+              height: 1.35,
             ),
           ),
         ),

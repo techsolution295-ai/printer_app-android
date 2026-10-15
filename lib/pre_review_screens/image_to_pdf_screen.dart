@@ -1,17 +1,20 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:smart_printer/config/pro_theme.dart';
+import '../l10n/labels.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
-import 'package:printing/printing.dart';
 
+import '../ads/ad_service.dart';
 import '../database/data-base.dart';
 import '../models/print_history_model.dart';
+import '../widgets/app_loader.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/pro_crown_icon.dart';
 
 class ImageToPdfScreen extends StatefulWidget {
   const ImageToPdfScreen({super.key, required this.images});
@@ -52,7 +55,7 @@ class _ImageToPdfScreenState extends State<ImageToPdfScreen> {
 
   Future<void> _savePdf() async {
     if (_images.isEmpty) {
-      _show('Select images first.');
+      _show(t(context, 'select_images_first'));
       return;
     }
     setState(() => _busy = true);
@@ -83,10 +86,10 @@ class _ImageToPdfScreenState extends State<ImageToPdfScreen> {
         ),
       );
       if (!mounted) return;
-      _show('Saved to Files');
+      _show(t(context, 'saved_to_files'));
     } catch (error) {
       debugPrint('Image to PDF save failed: $error');
-      if (mounted) _show('Could not save PDF: $error');
+      if (mounted) _show(t(context, 'could_not_save_pdf', namedArgs: {'error': '$error'}));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -94,7 +97,7 @@ class _ImageToPdfScreenState extends State<ImageToPdfScreen> {
 
   Future<void> _printPdf() async {
     if (_images.isEmpty) {
-      _show('Select images first.');
+      _show(t(context, 'select_images_first'));
       return;
     }
     setState(() => _busy = true);
@@ -124,19 +127,12 @@ class _ImageToPdfScreenState extends State<ImageToPdfScreen> {
           pages: _images.length,
         ),
       );
-      unawaited(
-        Printing.layoutPdf(
-          name: 'images_to_pdf.pdf',
-          onLayout: (_) async => bytes,
-        ).timeout(const Duration(seconds: 20)).catchError((error) {
-          debugPrint('Image to PDF print dialog failed: $error');
-          return false;
-        }),
-      );
+      if (!mounted) return;
+      await openPrintLayout(name: 'images_to_pdf.pdf', bytes: bytes);
       if (!mounted) return;
     } catch (error) {
       debugPrint('Image to PDF print failed: $error');
-      if (mounted) _show('Could not print PDF: $error');
+      if (mounted) _show(t(context, 'could_not_print_pdf', namedArgs: {'error': '$error'}));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -148,7 +144,10 @@ class _ImageToPdfScreenState extends State<ImageToPdfScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppBusyOverlay(
+      busy: _busy,
+      message: t(context, 'please_wait'),
+      child: Scaffold(
       backgroundColor: const Color(0xFFF4F7FB),
       appBar: AppBar(
         elevation: 0,
@@ -163,14 +162,17 @@ class _ImageToPdfScreenState extends State<ImageToPdfScreen> {
           ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'Image to PDF',
+        title: Text(
+          t(context, 'feat_image_to_pdf'),
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
             color: Color(0xFF2B3A55),
           ),
         ),
+        actions: const [
+          ProAppBarButton(),
+        ],
       ),
       body: Column(
         children: [
@@ -193,7 +195,7 @@ class _ImageToPdfScreenState extends State<ImageToPdfScreen> {
                 final file = _images[index];
                 return _ImageTile(
                   key: ValueKey(file.path ?? index),
-                  title: 'Image ${index + 1}',
+                  title: t(context, 'image_n', namedArgs: {'n': '${index + 1}'}),
                   subtitle: file.name,
                   thumb: _ImageThumb(path: file.path),
                 );
@@ -202,11 +204,12 @@ class _ImageToPdfScreenState extends State<ImageToPdfScreen> {
           ),
           _BottomActions(
             busy: _busy,
-            onSave: _savePdf,
-            onPrint: _printPdf,
+            onSave: afterInterstitial(_savePdf),
+            onPrint: afterInterstitial(_printPdf),
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -242,14 +245,14 @@ class _HeaderCard extends StatelessWidget {
             ),
             child: const Icon(
               Icons.picture_as_pdf_rounded,
-              color: Color(0xFF2F80ED),
+              color: AppTheme.actionColor,
               size: 18,
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Images $count',
+              t(context, 'images_count', namedArgs: {'count': '$count'}),
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
@@ -395,8 +398,8 @@ class _BottomActions extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: busy ? null : onSave,
                 icon: const Icon(Icons.save_rounded, size: 20),
-                label: const Text(
-                  'Save',
+                label: Text(
+                  t(context, 'save'),
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: OutlinedButton.styleFrom(
@@ -415,11 +418,11 @@ class _BottomActions extends StatelessWidget {
                 onPressed: busy ? null : onPrint,
                 icon: const Icon(Icons.print_rounded, size: 20),
                 label: Text(
-                  busy ? 'Working...' : 'Print',
+                  busy ? t(context, 'working') : t(context, 'print'),
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2F80ED),
+                  backgroundColor: AppTheme.actionColor,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(vertical: 14),

@@ -1,14 +1,18 @@
-import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdfx/pdfx.dart' as pdfx;
-import 'package:printing/printing.dart';
 
+import '../l10n/labels.dart';
+import '../ads/ad_service.dart';
+import '../ads/banner_ad_widget.dart';
 import '../database/data-base.dart';
 import '../models/print_history_model.dart';
+import '../widgets/app_loader.dart';
 import '../widgets/app_snack.dart';
 
 class FilesScreen extends StatefulWidget {
@@ -20,6 +24,7 @@ class FilesScreen extends StatefulWidget {
 
 class _FilesScreenState extends State<FilesScreen> {
   late Future<List<PrintHistory>> _historyFuture;
+  bool _busy = false;
 
   @override
   void initState() {
@@ -34,11 +39,13 @@ class _FilesScreenState extends State<FilesScreen> {
   }
 
   Future<void> _printItem(PrintHistory item) async {
+    if (_busy) return;
+    setState(() => _busy = true);
     try {
       if (item.type == 'images') {
         final dir = Directory(item.filePath);
         if (!await dir.exists()) {
-          AppSnack.show(context, 'Folder no longer exists');
+          AppSnack.show(context, t(context, 'folder_gone'));
           return;
         }
 
@@ -57,7 +64,7 @@ class _FilesScreenState extends State<FilesScreen> {
               ..sort((a, b) => a.path.compareTo(b.path));
 
         if (imageFiles.isEmpty) {
-          AppSnack.show(context, 'No printable images found');
+          AppSnack.show(context, t(context, 'no_printable_images'));
           return;
         }
 
@@ -75,41 +82,68 @@ class _FilesScreenState extends State<FilesScreen> {
         }
 
         final pdfBytes = await pdf.save();
-        unawaited(
-          Printing.layoutPdf(
-            onLayout: (_) => pdfBytes,
-            name: '${item.title}.pdf',
-          ).timeout(const Duration(seconds: 20)).catchError((error) {
-            debugPrint('Files print dialog failed: $error');
-            return false;
-          }),
-        );
+        if (!mounted) return;
+        await openPrintLayout(name: '${item.title}.pdf', bytes: pdfBytes);
         return;
       }
 
       final file = File(item.filePath);
       if (!await file.exists()) {
-        AppSnack.show(context, 'File not found');
+        if (!mounted) return;
+        AppSnack.show(context, t(context, 'file_not_found'));
         return;
       }
 
-      final bytes = await file.readAsBytes();
-      unawaited(
-        Printing.layoutPdf(
-          onLayout: (_) => bytes,
-          name: item.title,
-        ).timeout(const Duration(seconds: 20)).catchError((error) {
-          debugPrint('Files print dialog failed: $error');
-          return false;
-        }),
-      );
+      final Uint8List bytes;
+      final lower = item.filePath.toLowerCase();
+      if (lower.endsWith('.pdf')) {
+        bytes = await file.readAsBytes();
+      } else if (lower.endsWith('.txt')) {
+        final text = await file.readAsString();
+        final doc = pw.Document();
+        doc.addPage(
+          pw.MultiPage(
+            pageFormat: PdfPageFormat.a4,
+            build: (_) => [
+              pw.Paragraph(text: text, style: const pw.TextStyle(fontSize: 12)),
+            ],
+          ),
+        );
+        bytes = await doc.save();
+      } else if (RegExp(
+        r'\.(png|jpg|jpeg|webp)$',
+        caseSensitive: false,
+      ).hasMatch(lower)) {
+        final imageBytes = await file.readAsBytes();
+        final doc = pw.Document();
+        doc.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            build: (_) => pw.Center(
+              child: pw.Image(pw.MemoryImage(imageBytes), fit: pw.BoxFit.contain),
+            ),
+          ),
+        );
+        bytes = await doc.save();
+      } else {
+        if (!mounted) return;
+        AppSnack.show(context, t(context, 'cannot_print_type'));
+        return;
+      }
+
+      if (!mounted) return;
+      await openPrintLayout(name: item.title, bytes: bytes);
     } catch (e, stack) {
       debugPrint('Print error: $e\n$stack');
-      AppSnack.show(context, 'Could not print - try again');
+      if (mounted) AppSnack.show(context, t(context, 'could_not_print_retry'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _deleteItem(PrintHistory item) async {
+    if (_busy) return;
+    setState(() => _busy = true);
     try {
       if (item.type == 'images') {
         final dir = Directory(item.filePath);
@@ -128,13 +162,18 @@ class _FilesScreenState extends State<FilesScreen> {
       }
 
       await _refresh();
-      AppSnack.show(context, 'Deleted');
+      if (!mounted) return;
+      AppSnack.show(context, t(context, 'deleted'));
     } catch (_) {
-      AppSnack.show(context, 'Delete failed');
+      if (mounted) AppSnack.show(context, t(context, 'delete_failed'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _deleteAll() async {
+    if (_busy) return;
+    setState(() => _busy = true);
     try {
       final items = await HistoryDB.instance.getAllHistory();
       for (final item in items) {
@@ -152,9 +191,12 @@ class _FilesScreenState extends State<FilesScreen> {
       }
       await HistoryDB.instance.clearHistory();
       await _refresh();
-      AppSnack.show(context, 'All files cleared');
+      if (!mounted) return;
+      AppSnack.show(context, t(context, 'all_cleared'));
     } catch (_) {
-      AppSnack.show(context, 'Clear failed');
+      if (mounted) AppSnack.show(context, t(context, 'clear_failed'));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -177,12 +219,12 @@ class _FilesScreenState extends State<FilesScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
+                child: Text('cancel'.tr()),
               ),
               TextButton(
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('Delete'),
+                child: Text('delete'.tr()),
               ),
             ],
           ),
@@ -201,31 +243,34 @@ class _FilesScreenState extends State<FilesScreen> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
+    return AppBusyOverlay(
+      busy: _busy,
+      message: 'please_wait'.tr(),
+      child: Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: const Color(0xFFF8FAFC),
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        title: const Text(
-          'Print History',
+        title: Text(
+          'print_history'.tr(),
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Refresh',
+            tooltip: t(context, 'refresh'),
             onPressed: _refresh,
           ),
           IconButton(
             icon: const Icon(Icons.delete_sweep_rounded),
-            tooltip: 'Clear all',
+            tooltip: t(context, 'clear_all'),
             onPressed: () async {
               final confirmed = await _confirm(
                 context,
-                'Clear everything?',
-                'All saved print files will be permanently deleted.',
+                'clear_everything'.tr(),
+                'clear_everything_body'.tr(),
               );
               if (confirmed) {
                 await _deleteAll();
@@ -235,14 +280,20 @@ class _FilesScreenState extends State<FilesScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: RefreshIndicator.adaptive(
+      body: Column(
+        children: [
+          const BannerAdWidget(
+            margin: EdgeInsets.fromLTRB(12, 6, 12, 6),
+          ),
+          Expanded(
+            child: RefreshIndicator.adaptive(
         onRefresh: _refresh,
         color: colorScheme.primary,
         child: FutureBuilder<List<PrintHistory>>(
           future: _historyFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator.adaptive());
+              return AppLoader(message: 'loading_files'.tr());
             }
 
             final items = snapshot.data ?? [];
@@ -260,12 +311,12 @@ class _FilesScreenState extends State<FilesScreen> {
                 return _HistoryColumnItem(
                   item: item,
                   onTap: () => _openPreview(item),
-                  onPrint: () => _printItem(item),
+                  onPrint: afterInterstitial(() => _printItem(item)),
                   onDelete: () async {
                     final confirmed = await _confirm(
                       context,
-                      'Delete this print?',
-                      'This action cannot be undone.',
+                      'delete_print'.tr(),
+                      'cannot_undo'.tr(),
                     );
                     if (confirmed) {
                       await _deleteItem(item);
@@ -275,6 +326,10 @@ class _FilesScreenState extends State<FilesScreen> {
               },
             );
           },
+        ),
+      ),
+            ),
+          ],
         ),
       ),
     );
@@ -288,7 +343,7 @@ class _FilesScreenState extends State<FilesScreen> {
           Icon(Icons.history, size: 64, color: Colors.grey.shade300),
           const SizedBox(height: 14),
           Text(
-            'No print history yet',
+            'no_history'.tr(),
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w600,
@@ -297,7 +352,7 @@ class _FilesScreenState extends State<FilesScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Printed files will appear in a simple list here',
+            'no_history_sub'.tr(),
             style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
           ),
         ],
@@ -362,7 +417,7 @@ class _HistoryColumnItem extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          item.title,
+                          localizedHistoryTitle(context, item.title),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -387,13 +442,19 @@ class _HistoryColumnItem extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Type: ${isImages ? "Images" : "PDF"}',
+                t(context, 'type_line', namedArgs: {
+                  'type': isImages
+                      ? t(context, 'type_images')
+                      : t(context, 'type_pdf'),
+                }),
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
               ),
               if (item.pages != null) ...[
                 const SizedBox(height: 2),
                 Text(
-                  'Pages: ${item.pages}',
+                  t(context, 'pages_count', namedArgs: {
+                    'count': '${item.pages}',
+                  }),
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                 ),
               ],
@@ -404,7 +465,7 @@ class _HistoryColumnItem extends StatelessWidget {
                     child: OutlinedButton.icon(
                       onPressed: onTap,
                       icon: const Icon(Icons.visibility_outlined, size: 16),
-                      label: const Text('Preview'),
+                      label: Text('preview'.tr()),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -412,7 +473,7 @@ class _HistoryColumnItem extends StatelessWidget {
                     child: FilledButton.icon(
                       onPressed: onPrint,
                       icon: const Icon(Icons.print_outlined, size: 16),
-                      label: const Text('Print'),
+                      label: Text('print'.tr()),
                       style: FilledButton.styleFrom(
                         backgroundColor: const Color(0xFF2563EB),
                         foregroundColor: Colors.white,
@@ -422,7 +483,7 @@ class _HistoryColumnItem extends StatelessWidget {
                   const SizedBox(width: 8),
                   IconButton(
                     onPressed: onDelete,
-                    tooltip: 'Delete',
+                    tooltip: t(context, 'delete'),
                     icon: const Icon(Icons.delete_outline),
                     color: Colors.red.shade600,
                   ),
@@ -446,7 +507,11 @@ class FilePreviewScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(
+          localizedHistoryTitle(context, item.title),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
@@ -455,10 +520,10 @@ class FilePreviewScreen extends StatelessWidget {
           ? _MultiImagePreview(path: item.filePath)
           : _isPdfFile(item.filePath)
           ? _PdfViewer(path: item.filePath)
-          : const Center(
+          : Center(
               child: Text(
-                'No preview available for this file type',
-                style: TextStyle(color: Colors.grey),
+                t(context, 'no_preview_type'),
+                style: const TextStyle(color: Colors.grey),
               ),
             ),
     );
@@ -476,8 +541,11 @@ class _MultiImagePreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final dir = Directory(path);
     if (!dir.existsSync()) {
-      return const Center(
-        child: Text('Folder not found', style: TextStyle(color: Colors.grey)),
+      return Center(
+        child: Text(
+          t(context, 'folder_not_found'),
+          style: const TextStyle(color: Colors.grey),
+        ),
       );
     }
 
@@ -495,8 +563,11 @@ class _MultiImagePreview extends StatelessWidget {
           ..sort((a, b) => a.path.compareTo(b.path));
 
     if (images.isEmpty) {
-      return const Center(
-        child: Text('No images found', style: TextStyle(color: Colors.grey)),
+      return Center(
+        child: Text(
+          t(context, 'no_images'),
+          style: const TextStyle(color: Colors.grey),
+        ),
       );
     }
 
@@ -578,6 +649,7 @@ class _PdfViewerState extends State<_PdfViewer> {
           child: pdfx.PdfViewPinch(
             controller: _pdfController,
             scrollDirection: Axis.vertical,
+            builders: appPdfPinchBuilders(),
           ),
         ),
       ),

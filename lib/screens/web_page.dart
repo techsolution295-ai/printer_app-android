@@ -4,7 +4,10 @@ import 'dart:typed_data';
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../l10n/labels.dart';
 import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
@@ -12,8 +15,12 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../ads/ad_service.dart';
+import '../config/pro_theme.dart';
 import '../database/data-base.dart';
 import '../models/print_history_model.dart';
+import '../widgets/app_loader.dart';
+import '../widgets/app_snack.dart';
 
 class WebPageScreen extends StatefulWidget {
   const WebPageScreen({super.key});
@@ -78,7 +85,7 @@ class _WebPageScreenState extends State<WebPageScreen> {
               _isLoading = false;
               _pageError = error.description.isNotEmpty
                   ? error.description
-                  : 'Failed to load page.';
+                  : t(context, 'web_failed');
             });
           },
         ),
@@ -100,7 +107,7 @@ class _WebPageScreenState extends State<WebPageScreen> {
       if (!mounted || !_isLoading) return;
       setState(() {
         _isLoading = false;
-        _pageError = 'Page load timed out. Check your internet connection.';
+        _pageError = t(context, 'web_timeout');
       });
     });
   }
@@ -139,14 +146,21 @@ class _WebPageScreenState extends State<WebPageScreen> {
       );
       final totalHeight =
           double.tryParse(result.toString().replaceAll('"', '')) ?? 0;
-      if (totalHeight <= 0) return;
+      if (!mounted) return;
+      if (totalHeight <= 0) {
+        AppSnack.show(context, t(context, 'nothing_to_print'));
+        return;
+      }
 
-      final viewHeight = MediaQuery.of(context).size.height;
+      final viewHeight = MediaQuery.sizeOf(context).height;
       _totalPages = min((totalHeight / viewHeight).ceil(), 8);
 
-      final boundary =
-          _repaintKey.currentContext!.findRenderObject()
-              as RenderRepaintBoundary;
+      final boundaryObject = _repaintKey.currentContext?.findRenderObject();
+      if (boundaryObject is! RenderRepaintBoundary) {
+        AppSnack.show(context, t(context, 'could_not_print'));
+        return;
+      }
+      final boundary = boundaryObject;
 
       for (int i = 0; i < _totalPages; i++) {
         if (!mounted) break;
@@ -183,7 +197,8 @@ class _WebPageScreenState extends State<WebPageScreen> {
       final filePath =
           '${dir.path}/Web_Print_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final file = File(filePath);
-      await file.writeAsBytes(await pdf.save(), flush: true);
+      final bytes = await pdf.save();
+      await file.writeAsBytes(bytes, flush: true);
       await HistoryDB.instance.insertHistory(
         PrintHistory(
           title: 'Web Print',
@@ -194,34 +209,26 @@ class _WebPageScreenState extends State<WebPageScreen> {
         ),
       );
 
-      unawaited(
-        Printing.layoutPdf(
-          name: 'web_page.pdf',
-          onLayout: (_) async => pdf.save(),
-        ).timeout(const Duration(seconds: 20)).catchError((error) {
-          debugPrint('Web page print dialog failed: $error');
-          return false;
-        }),
+      if (!mounted) return;
+      await Printing.layoutPdf(
+        name: 'web_page.pdf',
+        onLayout: (_) async => bytes,
       );
     } catch (e) {
       debugPrint('Print error: $e');
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _pageError = 'Print failed.';
-        });
+        AppSnack.show(context, t(context, 'could_not_print'));
       }
-    }
-
-    if (mounted) {
-      setState(() => _isPrinting = false);
-      Navigator.of(context).popUntil((route) => route.isFirst);
+    } finally {
+      if (mounted) setState(() => _isPrinting = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: AppTheme.darkHeaderOverlay,
+      child: Scaffold(
       backgroundColor: const Color(0xFFF4F7FB),
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(76),
@@ -245,9 +252,9 @@ class _WebPageScreenState extends State<WebPageScreen> {
                     color: Colors.white,
                   ),
                   const SizedBox(width: 4),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Web Print',
+                      t(context, 'feat_web'),
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 18,
@@ -288,7 +295,7 @@ class _WebPageScreenState extends State<WebPageScreen> {
                   child: Row(
                     children: [
                       const Icon(Icons.public_rounded,
-                          color: Color(0xFF2F80ED)),
+                          color: AppTheme.actionColor),
                       const SizedBox(width: 8),
                       Expanded(
                         child: TextField(
@@ -296,8 +303,8 @@ class _WebPageScreenState extends State<WebPageScreen> {
                           keyboardType: TextInputType.url,
                           textInputAction: TextInputAction.go,
                           onSubmitted: (_) => _loadUrl(),
-                          decoration: const InputDecoration(
-                            hintText: 'Paste or type a URL',
+                          decoration: InputDecoration(
+                            hintText: t(context, 'paste_url'),
                             border: InputBorder.none,
                           ),
                         ),
@@ -305,7 +312,7 @@ class _WebPageScreenState extends State<WebPageScreen> {
                       IconButton(
                         onPressed: _loadUrl,
                         icon: const Icon(Icons.arrow_forward_rounded),
-                        color: const Color(0xFF2F80ED),
+                        color: AppTheme.actionColor,
                       ),
                     ],
                   ),
@@ -330,7 +337,7 @@ class _WebPageScreenState extends State<WebPageScreen> {
                       child: IgnorePointer(
                         ignoring: _isPrinting,
                         child: Opacity(
-                          opacity: _isPrinting ? 0.0 : 1.0,
+                          opacity: 1,
                           child: RepaintBoundary(
                             key: _repaintKey,
                             child: WebViewWidget(controller: _controller),
@@ -343,7 +350,11 @@ class _WebPageScreenState extends State<WebPageScreen> {
               ),
             ],
           ),
-          if (_isLoading) const Center(child: CircularProgressIndicator()),
+          if (_isLoading)
+            ColoredBox(
+              color: const Color(0x66F4F7FB),
+              child: AppLoader(message: t(context, 'loading_page')),
+            ),
           if (_pageError != null && !_isLoading)
             Center(
               child: Padding(
@@ -370,7 +381,7 @@ class _WebPageScreenState extends State<WebPageScreen> {
                     OutlinedButton.icon(
                       onPressed: _loadUrl,
                       icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Retry'),
+                      label: Text(t(context, 'retry')),
                     ),
                   ],
                 ),
@@ -386,7 +397,10 @@ class _WebPageScreenState extends State<WebPageScreen> {
                     const CircularProgressIndicator(),
                     const SizedBox(height: 16),
                     Text(
-                      'Preparing page $_currentPage of $_totalPages',
+                      t(context, 'preparing_page', namedArgs: {
+                        'current': '$_currentPage',
+                        'total': '$_totalPages',
+                      }),
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
@@ -406,8 +420,8 @@ class _WebPageScreenState extends State<WebPageScreen> {
             width: double.infinity,
             child: ElevatedButton.icon(
               icon: const Icon(Icons.print, color: Colors.white),
-              label: const Text(
-                'Print Full Page',
+              label: Text(
+                t(context, 'print_full_page'),
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 16,
@@ -420,10 +434,11 @@ class _WebPageScreenState extends State<WebPageScreen> {
                   borderRadius: BorderRadius.circular(14),
                 ),
               ),
-              onPressed: _isPrinting ? null : _printFullPage,
+              onPressed: _isPrinting ? null : afterInterstitial(_printFullPage),
             ),
           ),
         ),
+      ),
       ),
     );
   }

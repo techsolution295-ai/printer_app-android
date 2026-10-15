@@ -3,15 +3,18 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import '../l10n/labels.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdfx/pdfx.dart' as pdfx;
-import 'package:printing/printing.dart';
 
+import '../ads/ad_service.dart';
 import '../database/data-base.dart';
 import '../models/print_history_model.dart';
+import '../widgets/app_loader.dart';
 import '../widgets/app_snack.dart';
+import '../widgets/pro_crown_icon.dart';
 
 class SplitPdfScreen extends StatefulWidget {
   const SplitPdfScreen({super.key, required this.pdfPath});
@@ -38,14 +41,21 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
   }
 
   Future<void> _load() async {
-    final doc = await pdfx.PdfDocument.openFile(widget.pdfPath);
-    _document = doc;
-    _pageCount = doc.pagesCount;
-    _selected
-      ..clear()
-      ..addAll(List<bool>.filled(_pageCount, false));
-    if (!mounted) return;
-    setState(() => _loading = false);
+    try {
+      final doc = await pdfx.PdfDocument.openFile(widget.pdfPath);
+      _document = doc;
+      _pageCount = doc.pagesCount;
+      _selected
+        ..clear()
+        ..addAll(List<bool>.filled(_pageCount, false));
+      if (!mounted) return;
+      setState(() => _loading = false);
+    } catch (error) {
+      debugPrint('Split PDF load failed: $error');
+      if (!mounted) return;
+      setState(() => _loading = false);
+      AppSnack.show(context, t(context, 'could_not_open_pdf'));
+    }
   }
 
   @override
@@ -134,7 +144,7 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
   Future<void> _savePdf() async {
     final pages = await _selectedPages();
     if (pages.isEmpty) {
-      _show('Select at least one page.');
+      _show(t(context, 'select_one_page'));
       return;
     }
     setState(() => _busy = true);
@@ -165,10 +175,10 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
         ),
       );
       if (!mounted) return;
-      _show('Saved to Files');
+      _show(t(context, 'saved_to_files'));
     } catch (error) {
       debugPrint('Split PDF save failed: $error');
-      if (mounted) _show('Could not save PDF: $error');
+      if (mounted) _show(t(context, 'could_not_save_pdf', namedArgs: {'error': '$error'}));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -177,7 +187,7 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
   Future<void> _printPdf() async {
     final pages = await _selectedPages();
     if (pages.isEmpty) {
-      _show('Select at least one page.');
+      _show(t(context, 'select_one_page'));
       return;
     }
     setState(() => _busy = true);
@@ -207,19 +217,12 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
           pages: pages.length,
         ),
       );
-      unawaited(
-        Printing.layoutPdf(
-          name: 'split_pdf.pdf',
-          onLayout: (_) async => bytes,
-        ).timeout(const Duration(seconds: 20)).catchError((error) {
-          debugPrint('Split PDF print dialog failed: $error');
-          return false;
-        }),
-      );
+      if (!mounted) return;
+      await openPrintLayout(name: 'split_pdf.pdf', bytes: bytes);
       if (!mounted) return;
     } catch (error) {
       debugPrint('Split PDF print failed: $error');
-      if (mounted) _show('Could not print PDF: $error');
+      if (mounted) _show(t(context, 'could_not_print_pdf', namedArgs: {'error': '$error'}));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -237,7 +240,10 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AppBusyOverlay(
+      busy: _busy,
+      message: t(context, 'please_wait'),
+      child: Scaffold(
       backgroundColor: Colors.white,
       body: Column(
         children: [
@@ -263,8 +269,8 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
                             onPressed: () => Navigator.pop(context),
                           ),
                         ),
-                        const Text(
-                          'Split PDF',
+                        Text(
+                          t(context, 'feat_split'),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -272,6 +278,10 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF2B3A55),
                           ),
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: const ProAppBarButton(),
                         ),
                       ],
                     ),
@@ -283,8 +293,8 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
                         child: TextButton(
                           onPressed: _selected.where((v) => v).isEmpty
                               ? null
-                              : _savePdf,
-                          child: const Text('Save'),
+                              : afterInterstitial(_savePdf),
+                          child: Text(t(context, 'save')),
                         ),
                       ),
                       Expanded(
@@ -292,7 +302,7 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
                           onPressed: _selected.contains(false)
                               ? () => _toggleAll(true)
                               : null,
-                          child: const Text('All'),
+                          child: Text(t(context, 'all')),
                         ),
                       ),
                       Expanded(
@@ -300,7 +310,7 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
                           onPressed: _selected.contains(true)
                               ? () => _toggleAll(false)
                               : null,
-                          child: const Text('Clear'),
+                          child: Text(t(context, 'clear')),
                         ),
                       ),
                     ],
@@ -314,7 +324,7 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
             child: Row(
               children: [
                 Text(
-                  'Pages: $_pageCount',
+                  t(context, 'pages_count', namedArgs: {'count': '$_pageCount'}),
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     color: Colors.black87,
@@ -322,7 +332,9 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
                 ),
                 const Spacer(),
                 Text(
-                  'Selected: ${_selected.where((v) => v).length}',
+                  t(context, 'selected_count', namedArgs: {
+                    'count': '${_selected.where((v) => v).length}',
+                  }),
                   style: const TextStyle(color: Colors.black54),
                 ),
               ],
@@ -330,7 +342,7 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
           ),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? AppLoader(message: t(context, 'loading_pages'))
                 : GridView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                     itemCount: _pageCount,
@@ -414,7 +426,7 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'Page $pageNumber',
+                                t(context, 'page_n', namedArgs: {'n': '$pageNumber'}),
                                 style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
@@ -444,7 +456,7 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: _busy ? null : _printPdf,
+                  onPressed: _busy ? null : afterInterstitial(_printPdf),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2F8CFF),
                     shape: RoundedRectangleBorder(
@@ -452,7 +464,7 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
                     ),
                   ),
                   child: Text(
-                    _busy ? 'Working...' : 'Print Selected',
+                    _busy ? t(context, 'working') : t(context, 'print_selected'),
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w600,
@@ -464,6 +476,7 @@ class _SplitPdfScreenState extends State<SplitPdfScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 }
