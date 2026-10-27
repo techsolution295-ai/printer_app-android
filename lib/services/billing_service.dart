@@ -17,12 +17,11 @@ class BillingService extends ChangeNotifier with WidgetsBindingObserver {
 
   static final BillingService instance = BillingService._internal();
 
-  /// Play Console subscription. Base plans live under this product.
-  static const String subscriptionId = 'printer_premium';
-  static const String weeklyId = 'days-7-plan';
-  static const String monthlyId = 'monthly-plan';
-  static const String yearlyId = 'yearly-plan';
-  static const List<String> basePlanIds = [weeklyId, monthlyId, yearlyId];
+  /// Play Console subscription product IDs.
+  static const String weeklyId = 'weekly_premium';
+  static const String monthlyId = 'app_premium';
+  static const String yearlyId = 'yearly_premium';
+  static const List<String> productIds = [weeklyId, monthlyId, yearlyId];
 
   static const String _proKey = 'is_pro_user';
 
@@ -154,7 +153,7 @@ class BillingService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   bool _isActiveProPurchase(PurchaseDetails purchase) {
-    if (purchase.productID != subscriptionId) return false;
+    if (!productIds.contains(purchase.productID)) return false;
     if (purchase.status == PurchaseStatus.pending) return false;
     if (purchase.status == PurchaseStatus.error ||
         purchase.status == PurchaseStatus.canceled) {
@@ -174,7 +173,7 @@ class BillingService extends ChangeNotifier with WidgetsBindingObserver {
     lastError = null;
     notifyListeners();
     try {
-      final response = await _iap.queryProductDetails({subscriptionId});
+      final response = await _iap.queryProductDetails(productIds.toSet());
       if (response.error != null) {
         lastError = response.error!.message;
         debugPrint('BillingService: product query error: ${response.error!.message}');
@@ -184,13 +183,15 @@ class BillingService extends ChangeNotifier with WidgetsBindingObserver {
       }
       products = response.productDetails;
       debugPrint(
-        'BillingService: loaded ${products.length} offers for $subscriptionId',
+        'BillingService: loaded ${products.length} products for $productIds',
       );
       for (final product in products) {
-        if (product is! GooglePlayProductDetails) continue;
-        final offer = _offerFor(product);
+        final offer = product is GooglePlayProductDetails
+            ? _offerFor(product)
+            : null;
         debugPrint(
-          'BillingService: base plan ${offer?.basePlanId} '
+          'BillingService: ${product.id}'
+          '${offer?.basePlanId != null ? ' basePlan ${offer!.basePlanId}' : ''} '
           'price ${priceLabel(product)}',
         );
       }
@@ -203,20 +204,24 @@ class BillingService extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// The offer to sell for one base plan, not a free-trial or intro offer.
-  ProductDetails? productFor(String basePlanId) {
+  /// The paid offer for one product / base plan (skips free-trial / intro).
+  ProductDetails? productFor(String productId) {
     final matches = products.where((product) {
+      if (product.id == productId) return true;
       if (product is GooglePlayProductDetails) {
-        return _offerFor(product)?.basePlanId == basePlanId;
+        return _offerFor(product)?.basePlanId == productId;
       }
-      return product.id == basePlanId;
+      return false;
     }).toList();
     if (matches.isEmpty) return null;
 
     GooglePlayProductDetails? basePlan;
     GooglePlayProductDetails? paidOffer;
     for (final product in matches) {
-      if (product is! GooglePlayProductDetails) continue;
+      if (product is! GooglePlayProductDetails) {
+        if (product.rawPrice > 0) return product;
+        continue;
+      }
       final offer = _offerFor(product);
       if (offer == null) {
         if (product.rawPrice > 0) return product;
@@ -307,7 +312,7 @@ class BillingService extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _onPurchaseUpdate(List<PurchaseDetails> purchases) async {
     for (final purchase in purchases) {
-      if (purchase.productID != subscriptionId) {
+      if (!productIds.contains(purchase.productID)) {
         if (purchase.pendingCompletePurchase) {
           await _iap.completePurchase(purchase);
         }
